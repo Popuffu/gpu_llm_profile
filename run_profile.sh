@@ -1,1 +1,2 @@
-mpirun -n 8 --allow-run-as-root python trtprof.py --max_output_len 128 --max_input_length 128 --engine_dir /mnt/public/trt_models/Meta-Llama-3-8B-Instruct-engine --tokenizer_dir /mnt/public/Meta-Llama-3-8B-Instruct
+gpu_num=8
+mpirun -n $gpu_num --allow-run-as-root python trtllm_example_run.py
