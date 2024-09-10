@@ -16,6 +16,7 @@
 import os
 import time
 GPU_ID_LIST = [0, 1, 2, 3, 4, 5, 6, 7]
+BACKEND = "trtllm"
 GPU_PROFILE_STATE = {
     "gpu_id_list": GPU_ID_LIST, # PROFILE GPU ID
     "start_time": time.time(),
@@ -23,30 +24,30 @@ GPU_PROFILE_STATE = {
     "flag": "", # 用来打标记的
 }
 
-MODEL_NICKNAME = "llama3_8b"
+MODEL_NICKNAME = "llama3_70b"
 PROFILE_CFG = [
     # # batch, input_length, output_length
 
-    # (1, 128, 128),
+    (1, 128, 10000),
     # (1, 128, 256),
 
 
-    (1, 128, 8192),
-    (1, 128, 16384),
-    (1, 128, 32768),
-    (1, 128, 65536),
-    (2, 128, 8192),
-    (2, 128, 16384),
-    (2, 128, 32768),
-    (2, 128, 65536),
-    (4, 128, 8192),
-    (4, 128, 16384),
-    (4, 128, 32768),
-    (4, 128, 65536),
-    (8, 128, 8192),
-    (8, 128, 16384),
-    (8, 128, 32768),
-    (8, 128, 65536),
+    # (1, 128, 8192),
+    # (1, 128, 16384),
+    # (1, 128, 32768),
+    # (1, 128, 65536),
+    # (2, 128, 8192),
+    # (2, 128, 16384),
+    # (2, 128, 32768),
+    # (2, 128, 65536),
+    # (4, 128, 8192),
+    # (4, 128, 16384),
+    # (4, 128, 32768),
+    # (4, 128, 65536),
+    # (8, 128, 8192),
+    # (8, 128, 16384),
+    # (8, 128, 32768),
+    # (8, 128, 65536),
     # # (16, 128, 128), # OOM
 
     # (1, 256, 8192),
@@ -81,7 +82,7 @@ PROFILE_CFG = [
 ]
 
 WARMUP, TESTFREQ = 4, 10
-
+assert BACKEND == "trtllm"
 ## Hyper Param Above ##
 
 import argparse
@@ -138,7 +139,6 @@ def get_decode_avg_power(gpu_profile_data):
                 first_decode_time = t
             last_decode_time = t
 
-    # print(gpu_profile_data)
     # 从40%处开始统计到90%，避免一开始的功耗波动
     start_record_time = first_decode_time + (last_decode_time - first_decode_time) * 0.40
     end_record_time = first_decode_time + (last_decode_time - first_decode_time) * 0.90
@@ -457,7 +457,7 @@ def main(args, profile_cfg_list):
                 exp_result = {
                     "experiment_timestamp": time.strftime('%Y.%m.%d-%H:%M:%S', time.localtime(time.time())),
                     "model_nickname": MODEL_NICKNAME,
-                    "backend": "trtllm",
+                    "backend": BACKEND,
                     "gpu_num": len(GPU_ID_LIST),
                     "batch": BATCH,
                     "input_length": INPUT_LENGTH,
