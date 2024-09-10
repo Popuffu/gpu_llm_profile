@@ -1,131 +1,7 @@
-GPU_ID_LIST = [0, 1, 2, 3, 4, 5, 6, 7]
-MODEL_NICKNAME = "llama3_70b"
-BACKEND = "vllm"
-PROFILE_CFG = [
-    # # batch, input_length, output_length
-    # (1, 32, 8),
 
-    (1, 128, 8192),
-    (1, 128, 16384),
-    (1, 128, 32768),
-    (1, 128, 65536),
-    (2, 128, 8192),
-    (2, 128, 16384),
-    (2, 128, 32768),
-    (2, 128, 65536),
-    (4, 128, 8192),
-    (4, 128, 16384),
-    (4, 128, 32768),
-    (4, 128, 65536),
-    (8, 128, 8192),
-    (8, 128, 16384),
-    (8, 128, 32768),
-    (8, 128, 65536),
-    # (16, 128, 128), # OOM
-
-    (1, 256, 8192),
-    (1, 256, 16384),
-    (1, 256, 32768),
-    (1, 256, 65536),
-    (2, 256, 8192),
-    (2, 256, 16384),
-    (2, 256, 32768),
-    (2, 256, 65536),
-    (4, 256, 8192),
-    (4, 256, 16384),
-    (4, 256, 32768),
-    (4, 256, 65536),
-    # (8, 256, 128), # OOM
-
-    (1, 512, 8192),
-    (1, 512, 16384),
-    (1, 512, 32768),
-    (1, 512, 65536),
-    (2, 512, 8192),
-    (2, 512, 16384),
-    (2, 512, 32768),
-    (2, 512, 65536),
-    # (4, 512, 128), # OOM
-
-    (1, 1024, 8192),
-    (1, 1024, 16384),
-    (1, 1024, 32768),
-    (1, 1024, 65536),
-    # (2, 1024, 128), # OOM
-]
-
-    # (1, 128, 128),
-    # (1, 128, 256),
-    # (1, 128, 512),
-    # (1, 128, 1024),
-    # (1, 128, 2048),
-    # (1, 128, 4096),
-    # (2, 128, 128),
-    # (2, 128, 256),
-    # (2, 128, 512),
-    # (2, 128, 1024),
-    # (2, 128, 2048),
-    # (2, 128, 4096),
-    # (4, 128, 128),
-    # (4, 128, 256),
-    # (4, 128, 512),
-    # (4, 128, 1024),
-    # (4, 128, 2048),
-    # (4, 128, 4096),
-    # (8, 128, 128),
-    # (8, 128, 256),
-    # (8, 128, 512),
-    # (8, 128, 1024),
-    # (8, 128, 2048),
-    # (8, 128, 4096),
-    # (16, 128, 128), # OOM
-
-    # (1, 256, 128),
-    # (1, 256, 256),
-    # (1, 256, 512),
-    # (1, 256, 1024)
-    # (1, 256, 2048),
-    # (1, 256, 4096),
-    # (2, 256, 128),
-    # (2, 256, 256),
-    # (2, 256, 512),
-    # (2, 256, 1024),
-    # (2, 256, 2048),
-    # (2, 256, 4096),
-    # (4, 256, 128),
-    # (4, 256, 256),
-    # (4, 256, 512),
-    # (4, 256, 1024),
-    # (4, 256, 2048),
-    # (4, 256, 4096),
-    # (8, 256, 128), # OOM
-
-    # (1, 512, 128),
-    # (1, 512, 256),
-    # (1, 512, 512),
-    # (1, 512, 1024),
-    # (1, 512, 2048),
-    # (1, 512, 4096),
-    # (2, 512, 128),
-    # (2, 512, 256),
-    # (2, 512, 512),
-    # (2, 512, 1024),
-    # (2, 512, 2048),
-    # (2, 512, 4096),
-    # (4, 512, 128), # OOM
-
-    # (1, 1024, 128),
-    # (1, 1024, 256),
-    # (1, 1024, 512),
-    # (1, 1024, 1024),
-    # (1, 1024, 2048),
-    # (1, 1024, 4096),
-    # (2, 1024, 128), # OOM
-
-WARMUP, TESTFREQ = 4, 10
-
-## Hyper Param Above ##
-
+from profile_config import GPU_ID_LIST, BACKEND, MODEL_NICKNAME, WARMUP, TESTFREQ, PROFILE_CFG, HF_MODEL_DIR
+assert BACKEND in ("hf", "vllm")
+## Import hyper params ##
 
 import os
 import time
@@ -141,54 +17,8 @@ print(f"CUDA_VISIBLE_DEVICES = {os.environ['CUDA_VISIBLE_DEVICES']}")
 import torch
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import subprocess
 import threading
-import numpy as np
-
-
-# 定义一个函数来获取当前的GPU功耗
-def get_gpu_power():
-    result = subprocess.run(["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"], stdout=subprocess.PIPE)
-    power_for_all_gpu = result.stdout.decode("utf-8").strip().split("\n")
-    assert len(power_for_all_gpu) == 8 # total GPU number
-    total_gpu_power = 0.
-    for gpu_id in GPU_PROFILE_STATE["gpu_id_list"]:
-        total_gpu_power += float(power_for_all_gpu[gpu_id])
-    return total_gpu_power
-
-
-# 定义一个函数来测量并记录GPU功耗
-def monitor_gpu_power(gpu_profile_state, gpu_profile_data):
-    while gpu_profile_state["running"]:
-        power = get_gpu_power()
-        gpu_profile_data["time_list"].append(time.time() - gpu_profile_state["start_time"])
-        gpu_profile_data["power_list"].append(power)
-        gpu_profile_data["flag_list"].append(gpu_profile_state["flag"])
-        # time.sleep(gpu_profile_interval)
-
-
-def get_decode_avg_power(gpu_profile_data):
-    first_decode_time = None
-    last_decode_time = None
-    for t, p, f in zip(gpu_profile_data["time_list"], gpu_profile_data["power_list"], gpu_profile_data["flag_list"]):
-        if f == "decode":
-            if first_decode_time is None:
-                first_decode_time = t
-            last_decode_time = t
-
-    # print(gpu_profile_data)
-    # 从40%处开始统计到90%，避免一开始的功耗波动
-    start_record_time = first_decode_time + (last_decode_time - first_decode_time) * 0.40
-    end_record_time = first_decode_time + (last_decode_time - first_decode_time) * 0.90
-    record_power_list = list()
-    for t, p, f in zip(gpu_profile_data["time_list"], gpu_profile_data["power_list"], gpu_profile_data["flag_list"]):
-        if f == "decode" and t >= start_record_time and t <= end_record_time:
-            record_power_list.append(p)
-    record_power_list = np.array(record_power_list)
-    avg_decode_power = np.mean(record_power_list)
-    stderr_decode_power = np.std(record_power_list)
-    return avg_decode_power, stderr_decode_power
-
+from utils import utils
 
 
 def profile(model_nickname, model, backend, batch, input_length, output_length):
@@ -199,7 +29,7 @@ def profile(model_nickname, model, backend, batch, input_length, output_length):
         "flag_list": list(), 
     }
     # 启动一个线程来监控GPU功耗
-    monitor_thread = threading.Thread(target=monitor_gpu_power, args=(GPU_PROFILE_STATE, gpu_profile_data))
+    monitor_thread = threading.Thread(target=utils.monitor_gpu_power, args=(GPU_PROFILE_STATE, gpu_profile_data))
     monitor_thread.start()
 
 
@@ -276,25 +106,18 @@ def profile(model_nickname, model, backend, batch, input_length, output_length):
     monitor_thread.join()
 
     # 计算平均功耗
-    avg_decode_power, stderr_decode_power = get_decode_avg_power(gpu_profile_data)
+    avg_decode_power, stderr_decode_power = utils.get_decode_avg_power(gpu_profile_data)
 
     return prefill_latency, decode_latency, total_latency, float(avg_decode_power), float(stderr_decode_power)
 
 
 if __name__ == "__main__":
 
-    if MODEL_NICKNAME == "llama3_8b":
-        model_dir = "/mnt/public/Meta-Llama-3-8B-Instruct"
-    elif MODEL_NICKNAME == "llama3_70b":
-        model_dir = "/mnt/public/Meta-Llama-3-70B-Instruct-hf"
-    else:
-        raise ValueError
-    
-    # tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code = True)
+    # tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_DIR, trust_remote_code = True)
     if BACKEND == "hf":
-        model = AutoModelForCausalLM.from_pretrained(model_dir, trust_remote_code = True, resume_download = True, device_map="auto").half()
+        model = AutoModelForCausalLM.from_pretrained(HF_MODEL_DIR, trust_remote_code = True, resume_download = True, device_map="auto").half()
     elif BACKEND == "vllm":
-        model = LLM(model=model_dir, tensor_parallel_size=len(GPU_ID_LIST))
+        model = LLM(model=HF_MODEL_DIR, tensor_parallel_size=len(GPU_ID_LIST))
     else:
         raise ValueError
 
