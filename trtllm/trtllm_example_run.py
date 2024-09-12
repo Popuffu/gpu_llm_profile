@@ -239,10 +239,10 @@ def main(args, profile_cfg_list):
 
             torch.cuda.synchronize()
             if runtime_rank == 0:
+                print("Start prefill, ", time.strftime('%Y.%m.%d-%H:%M:%S', time.localtime(time.time())))
                 st.synchronize()
                 st.record()
                 GPU_PROFILE_STATE["flag"] = "prefill"
-                
             for _ in range(TESTFREQ):
                 outputs = runner.generate(
                     batch_input_ids=batch_input_ids,
@@ -287,6 +287,7 @@ def main(args, profile_cfg_list):
 
             torch.cuda.synchronize()
             if runtime_rank == 0:
+                print("Start decode, ", time.strftime('%Y.%m.%d-%H:%M:%S', time.localtime(time.time())))
                 st.synchronize()
                 st.record()
                 GPU_PROFILE_STATE["flag"] = "decode"
@@ -332,6 +333,7 @@ def main(args, profile_cfg_list):
                 ed.record()
                 ed.synchronize()
                 GPU_PROFILE_STATE["flag"] = ""
+                print("End decode, ", time.strftime('%Y.%m.%d-%H:%M:%S', time.localtime(time.time())))
                 total_latency = st.elapsed_time(ed) / TESTFREQ
 
                 decode_latency = total_latency - prefill_latency
@@ -344,8 +346,8 @@ def main(args, profile_cfg_list):
                 assert int(outputs['output_ids'].shape[1]) == 1
                 assert int(outputs['output_ids'].shape[2]) == INPUT_LENGTH + OUTPUT_LENGTH, f"{outputs['output_ids'].shape, INPUT_LENGTH + OUTPUT_LENGTH}"
 
-                # 计算平均功耗
-                avg_decode_power, stderr_decode_power = utils.get_decode_avg_power(gpu_profile_data)
+                # 计算平均功耗，注意被打上decode flag的阶段，既包含prefill，又包含decode。因此当output_length=1时，测出其实就是prefill的功耗
+                avg_gpu_power, stderr_gpu_power = utils.get_gpu_avg_power(gpu_profile_data, "decode")
 
                 decode_token_output_latency = decode_latency / OUTPUT_LENGTH
                 decode_tokens_per_second = (1000 / decode_token_output_latency) * BATCH
@@ -362,12 +364,12 @@ def main(args, profile_cfg_list):
                     "input_length": INPUT_LENGTH,
                     "output_length": OUTPUT_LENGTH,
                     "prefill_latency(ms)": prefill_latency,
-                    "decode_latency(ms)": decode_latency,
-                    "total_latency(ms)": total_latency,
-                    "total_throughput(token/s)": total_tokens_per_second,
-                    "decode_throughput(tokens/s)": decode_tokens_per_second,
-                    "decode_power_avg(W)": avg_decode_power,
-                    "decode_power_stderr(W)": stderr_decode_power,
+                    "decode_latency(ms)": decode_latency if OUTPUT_LENGTH > 1 else "-", # output_length=1时，decode_latency无意义
+                    # "total_latency(ms)": total_latency,
+                    # "total_throughput(token/s)": total_tokens_per_second,
+                    "decode_throughput(tokens/s)": decode_tokens_per_second if OUTPUT_LENGTH > 1 else "-", # output_length=1时，decode_latency无意义
+                    "gpu_power_avg(W)": avg_gpu_power,
+                    "gpu_power_std(W)": stderr_gpu_power,
                 }
                 print(str(exp_result).replace("{", "----------------------------------------------------\n").replace("}", "\n----------------------------------------------------").replace(", ", "\n"))
 

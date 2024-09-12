@@ -4,15 +4,21 @@ BACKEND = "trtllm"
 assert BACKEND in ("hf", "vllm", "trtllm")
 MODEL_NICKNAME = "llama3_70b"
 
-WARMUP = 4
-TESTFREQ = 10
+WARMUP = 0
+TESTFREQ = 1
 
 PROFILE_CFG = list()
+
+PROFILE_CFG = [(1, 1, 128),]
 # example: [(batch, input_length, output_length), ...]
-for batch in [1]:
+for batch in [8, 16, 32, 64]: # 
     for input_length in [1]:
-        for output_length_k in [0.25, 0.5, 1, 2, 4, 8, 16]:#, 32, 64, 128, 256]:
-            PROFILE_CFG.append((batch, input_length, int(output_length_k * 1024)))
+        if batch == 8:
+            out_list = [65536]
+        else:
+            out_list = [1024, 2048, 4096, 8192, 16384, 32768, 65536]
+        for output_length in out_list:
+            PROFILE_CFG.append((batch, input_length, output_length))
 
 # PROFILE_CFG = [
 #     (1, 32, 32),
@@ -25,7 +31,7 @@ if MODEL_NICKNAME == "llama3_8b":
     HF_MODEL_DIR = "/mnt/public/Meta-Llama-3-8B-Instruct"
 elif MODEL_NICKNAME == "llama3_70b":
     assert len(GPU_ID_LIST) == 8
-    TRT_ENGINE_DIR = "/mnt/public/trt_models/Meta-Llama-3-70B-Instruct-hf-8gpu-engine"
+    TRT_ENGINE_DIR = "/mnt/public/trt_models/Meta-Llama-3-70B-Instruct-hf-8gpu-new-engine"
     HF_MODEL_DIR = "/mnt/public/Meta-Llama-3-70B-Instruct-hf"
 else:
     raise ValueError

@@ -23,24 +23,24 @@ def monitor_gpu_power(gpu_profile_state, gpu_profile_data):
         # time.sleep(gpu_profile_interval)
 
 
-def get_decode_avg_power(gpu_profile_data):
-    first_decode_time = None
-    last_decode_time = None
+def get_gpu_avg_power(gpu_profile_data, flag):
+    first_flag_time = None
+    last_flag_time = None
     for t, p, f in zip(gpu_profile_data["time_list"], gpu_profile_data["power_list"], gpu_profile_data["flag_list"]):
-        if f == "decode":
-            if first_decode_time is None:
-                first_decode_time = t
-            last_decode_time = t
+        if f == flag:
+            if first_flag_time is None:
+                first_flag_time = t
+            last_flag_time = t
 
     # print(gpu_profile_data)
     # 从40%处开始统计到90%，避免一开始的功耗波动
-    start_record_time = first_decode_time + (last_decode_time - first_decode_time) * 0.40
-    end_record_time = first_decode_time + (last_decode_time - first_decode_time) * 0.90
+    start_record_time = first_flag_time + (last_flag_time - first_flag_time) * 0.40
+    end_record_time = first_flag_time + (last_flag_time - first_flag_time) * 0.90
     record_power_list = list()
     for t, p, f in zip(gpu_profile_data["time_list"], gpu_profile_data["power_list"], gpu_profile_data["flag_list"]):
-        if f == "decode" and t >= start_record_time and t <= end_record_time:
+        if f == flag and t >= start_record_time and t <= end_record_time:
             record_power_list.append(p)
     record_power_list = np.array(record_power_list)
-    avg_decode_power = np.mean(record_power_list)
-    stderr_decode_power = np.std(record_power_list)
-    return avg_decode_power, stderr_decode_power
+    avg_flag_power = np.mean(record_power_list)
+    stderr_flag_power = np.std(record_power_list)
+    return avg_flag_power, stderr_flag_power

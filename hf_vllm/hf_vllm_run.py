@@ -105,10 +105,10 @@ def profile(model_nickname, model, backend, batch, input_length, output_length):
     GPU_PROFILE_STATE["running"] = False
     monitor_thread.join()
 
-    # 计算平均功耗
-    avg_decode_power, stderr_decode_power = utils.get_decode_avg_power(gpu_profile_data)
+    # 计算平均功耗，注意被打上decode flag的阶段，既包含prefill，又包含decode。因此当output_length=1时，测出其实就是prefill的功耗
+    avg_gpu_power, stderr_gpu_power = utils.get_gpu_avg_power(gpu_profile_data, "decode")
 
-    return prefill_latency, decode_latency, total_latency, float(avg_decode_power), float(stderr_decode_power)
+    return prefill_latency, decode_latency, total_latency, float(avg_gpu_power), float(stderr_gpu_power)
 
 
 if __name__ == "__main__":
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         raise ValueError
 
     for exp_id, (batch, input_length, output_length) in enumerate(PROFILE_CFG):
-        prefill_latency, decode_latency, total_latency, avg_decode_power, stderr_decode_power = profile(MODEL_NICKNAME, model, BACKEND, batch, input_length, output_length)
+        prefill_latency, decode_latency, total_latency, avg_gpu_power, stderr_gpu_power = profile(MODEL_NICKNAME, model, BACKEND, batch, input_length, output_length)
 
         decode_token_output_latency = decode_latency / output_length
         decode_tokens_per_second = (1000 / decode_token_output_latency) * batch
@@ -139,12 +139,12 @@ if __name__ == "__main__":
             "input_length": input_length,
             "output_length": output_length,
             "prefill_latency(ms)": prefill_latency,
-            "decode_latency(ms)": decode_latency,
-            "total_latency(ms)": total_latency,
-            "total_throughput(token/s)": total_tokens_per_second,
-            "decode_throughput(tokens/s)": decode_tokens_per_second,
-            "decode_power_avg(W)": avg_decode_power,
-            "decode_power_stderr(W)": stderr_decode_power,
+            "decode_latency(ms)": decode_latency if output_length > 1 else "-", # output_length=1时，decode_latency无意义
+            # "total_latency(ms)": total_latency,
+            # "total_throughput(token/s)": total_tokens_per_second,
+            "decode_throughput(tokens/s)": decode_tokens_per_second if output_length > 1 else "-", # output_length=1时，decode_latency无意义
+            "gpu_power_avg(W)": avg_gpu_power,
+            "gpu_power_std(W)": stderr_gpu_power,
         }
         print(str(exp_result).replace("{", "----------------------------------------------------\n").replace("}", "\n----------------------------------------------------").replace(", ", "\n"))
 
