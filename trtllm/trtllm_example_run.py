@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from profile_config import GPU_ID_LIST, BACKEND, MODEL_NICKNAME, WARMUP, TESTFREQ, PROFILE_CFG, TRT_ENGINE_DIR, HF_MODEL_DIR
+from profile_config import GPU_ID_LIST, BACKEND, MODEL_NICKNAME, WARMUP, TESTFREQ, PROFILE_CFG, TRT_ENGINE_DIR, HF_MODEL_DIR, DATA_TYPE, GPU_NAME
 assert BACKEND == "trtllm"
 ## Import hyper params ##
 
@@ -359,7 +359,9 @@ def main(args, profile_cfg_list):
                     "experiment_timestamp": time.strftime('%Y.%m.%d-%H:%M:%S', time.localtime(time.time())),
                     "model_nickname": MODEL_NICKNAME,
                     "backend": BACKEND,
+                    "gpu_name": GPU_NAME,
                     "gpu_num": len(GPU_ID_LIST),
+                    "data_type": DATA_TYPE,
                     "batch": BATCH,
                     "input_length": INPUT_LENGTH,
                     "output_length": OUTPUT_LENGTH,

@@ -1,9 +1,11 @@
 #!/bin/bash
 
-# Get both BACKEND and GPU_NUM from the Python script
-read BACKEND GPU_NUM <<< $(python profile_config.py)
+# Get both params from the Python script
+read BACKEND GPU_NUM DATA_TYPE MODEL_NAME <<< $(python profile_config.py)
 echo "Backend: $BACKEND"
 echo "GPU_NUM: $GPU_NUM"
+echo "DATA_TYPE: $DATA_TYPE"
+echo "MODEL_NAME: $MODEL_NAME"
 
 if [ "$BACKEND" == "trtllm" ]; then
     # 1. update the max_seq_len in trtllm engine config.json
