@@ -11,18 +11,53 @@ class Config:
         self.Model_name = Model_name
         self.Hardware_name = Hardware_name
         
-        if self.Model_name == "LLaMA2-7B":
-            self.Embedding_flag = False
-            self.Bias_flag = False
-            self.Layer_num = 32
-            self.Embedding_size = 4096
-            self.Vocabulary_size = 32000
-            self.Attention_head = 32
-            self.Attention_feature_size = self.Embedding_size // self.Attention_head
-            self.FFN_times = 11008 / self.Embedding_size
+        if self.Model_name == "Llama-2-7B":
+            self.EMBEDDING_FLAG = False
+            self.BIAS_FLAG = False
+            self.HIDDEN_SIZE = 4096
+            self.INTERMEDIATE_SIZE = 11008
+            self.NUM_ATTENTION_HEADS = 32
+            self.NUM_HIDDEN_LAYERS = 32
+            self.NUM_KEY_VALUE_HEADS = 32
+            self.VOCAB_SIZE = 32000
+
+        elif self.Model_name in ("Llama-3-8B", "Llama-3.1-8B"):
+            self.EMBEDDING_FLAG = False
+            self.BIAS_FLAG = False
+            self.HIDDEN_SIZE = 4096
+            self.INTERMEDIATE_SIZE = 14336
+            self.NUM_ATTENTION_HEADS = 32
+            self.NUM_HIDDEN_LAYERS = 32
+            self.NUM_KEY_VALUE_HEADS = 8
+            self.VOCAB_SIZE = 128256
+
+        elif self.Model_name in ("Llama-3-70B", "Llama-3.1-70B"):
+            self.EMBEDDING_FLAG = False
+            self.BIAS_FLAG = False
+            self.HIDDEN_SIZE = 8192
+            self.INTERMEDIATE_SIZE = 28672
+            self.NUM_ATTENTION_HEADS = 64
+            self.NUM_HIDDEN_LAYERS = 80
+            self.NUM_KEY_VALUE_HEADS = 8
+            self.VOCAB_SIZE = 128256
+
+        elif self.Model_name in ("Llama-3-405B"):
+            self.EMBEDDING_FLAG = False
+            self.BIAS_FLAG = False
+            self.HIDDEN_SIZE = 16384
+            self.INTERMEDIATE_SIZE = 53248
+            self.NUM_ATTENTION_HEADS = 128
+            self.NUM_HIDDEN_LAYERS = 126
+            self.NUM_KEY_VALUE_HEADS = 16
+            self.VOCAB_SIZE = 128256
+
         else:
             raise ValueError("cfg.Model_name not found")
         
+        self.hidden_size_for_each_head = self.HIDDEN_SIZE // self.NUM_ATTENTION_HEADS
+        self.Q_hidden_size = self.NUM_ATTENTION_HEADS * self.hidden_size_for_each_head
+        self.KV_hidden_size = self.NUM_KEY_VALUE_HEADS * self.hidden_size_for_each_head
+
         if Hardware_name == "GPU":
             self.Weight_width = 2 # FP16
             self.Activation_width = 2 # FP16
@@ -49,195 +84,195 @@ class Stage:
         self.onchip_memory_usage = 0  # 只记录主要线性层或者attention等
 
 
-def Prefill(cfg):
+def Prefill(cfg: Config):
     Stage_list = list()
 
     Weight_memory_usage = cfg.Weight_width * (
-        cfg.Layer_num * (
-            cfg.Embedding_size * cfg.Embedding_size * 3
-            + cfg.Embedding_size * 3
-            + cfg.Embedding_size * cfg.Embedding_size
-            + cfg.Embedding_size
-            + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times
-            + cfg.Embedding_size * cfg.FFN_times
-            + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times
-            + cfg.Embedding_size + cfg.Embedding_size * 2
-            + cfg.Embedding_size * 2
+        cfg.NUM_HIDDEN_LAYERS * (
+            cfg.HIDDEN_SIZE * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size)
+            + (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size)
+            + cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE
+            + cfg.HIDDEN_SIZE
+            + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE
+            + cfg.INTERMEDIATE_SIZE
+            + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE
+            + cfg.HIDDEN_SIZE + cfg.HIDDEN_SIZE * 2
+            + cfg.HIDDEN_SIZE * 2
             )
-        + cfg.Embedding_size * 2
-        + cfg.Embedding_size * cfg.Vocabulary_size
+        + cfg.HIDDEN_SIZE * 2
+        + cfg.HIDDEN_SIZE * cfg.VOCAB_SIZE
     )
-    KV_cache_init_usage = cfg.Activation_width * cfg.Layer_num * (cfg.Prefill_size * cfg.Embedding_size * 2)
+    KV_cache_init_usage = cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * (cfg.Prefill_size * cfg.HIDDEN_SIZE * 2)
 
-    if cfg.Embedding_flag:
+    if cfg.EMBEDDING_FLAG:
         embedding1 = Stage("Embedding", platform="cloud")
-        embedding1.read_data_amount = (cfg.Prefill_size + cfg.Prefill_size * cfg.Embedding_size) * cfg.Activation_width
-        embedding1.compute_amount = cfg.Prefill_size * cfg.Embedding_size  # 加位置编码
-        embedding1.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
+        embedding1.read_data_amount = (cfg.Prefill_size + cfg.Prefill_size * cfg.HIDDEN_SIZE) * cfg.Activation_width
+        embedding1.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE  # 加位置编码
+        embedding1.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
         embedding1.memory_usage = Weight_memory_usage + embedding1.write_data_amount
 
         Stage_list.append(embedding1)
     
-    for i in range(cfg.Layer_num):
+    for i in range(cfg.NUM_HIDDEN_LAYERS):
         RMSLayerNorm1 = Stage("RMSLayerNorm", platform="cloud")
-        RMSLayerNorm1.read_data_amount = (cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-                                          + cfg.Embedding_size * cfg.Weight_width * (1 + cfg.Bias_flag))
-        RMSLayerNorm1.compute_amount = cfg.Prefill_size * cfg.Embedding_size * 2
-        RMSLayerNorm1.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
+        RMSLayerNorm1.read_data_amount = (cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+                                          + cfg.HIDDEN_SIZE * cfg.Weight_width * (1 + cfg.BIAS_FLAG))
+        RMSLayerNorm1.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
+        RMSLayerNorm1.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
         RMSLayerNorm1.memory_usage = (Weight_memory_usage
-                                      + cfg.Activation_width * i * cfg.Prefill_size * cfg.Embedding_size * 2
+                                      + cfg.Activation_width * i * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                       + RMSLayerNorm1.write_data_amount)
         Stage_list.append(RMSLayerNorm1)
 
         QKV_MM = Stage("QKV_MM", platform="cloud")
-        QKV_MM.read_data_amount = (cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width + (cfg.Embedding_size * cfg.Embedding_size) * cfg.Weight_width) * 3
-        QKV_MM.compute_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Embedding_size * 2 * 3   #没考虑bias是device_dict["cloud"].mfu里自带可以加bias模块，方便计算
-        QKV_MM.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width * 3
-        QKV_MM.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + cfg.Activation_width * cfg.Prefill_size * cfg.Embedding_size
-        QKV_MM.onchip_memory_usage = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Embedding_size * cfg.Weight_width + QKV_MM.write_data_amount
+        QKV_MM.read_data_amount = (cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width + (cfg.HIDDEN_SIZE * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size)) * cfg.Weight_width)
+        QKV_MM.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size) * 2   #没考虑bias是device_dict["cloud"].mfu里自带可以加bias模块，方便计算
+        QKV_MM.write_data_amount = cfg.Prefill_size * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size) * cfg.Activation_width
+        QKV_MM.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * cfg.Prefill_size * cfg.HIDDEN_SIZE
+        QKV_MM.onchip_memory_usage = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE * cfg.Weight_width + QKV_MM.write_data_amount
         Stage_list.append(QKV_MM)
         
         rope = Stage("rope_embedding_QK", platform="cloud")
-        rope.read_data_amount = (2 * cfg.Attention_feature_size * cfg.Prefill_size * cfg.Weight_width
-                                 + 2 * cfg.Attention_head * cfg.Attention_feature_size * cfg.Prefill_size * cfg.Activation_width)
-        rope.compute_amount = 2 * 2 * cfg.Attention_head * cfg.Attention_feature_size * cfg.Prefill_size
-        rope.write_data_amount = 2 * cfg.Attention_head * cfg.Attention_feature_size * cfg.Prefill_size  # 写入memory
+        rope.read_data_amount = (2 * cfg.hidden_size_for_each_head * cfg.Prefill_size * cfg.Weight_width
+                                 + (cfg.Q_hidden_size + cfg.KV_hidden_size) * cfg.Prefill_size * cfg.Activation_width)
+        rope.compute_amount = 2 * (cfg.Q_hidden_size + cfg.KV_hidden_size) * cfg.Prefill_size
+        rope.write_data_amount = (cfg.Q_hidden_size + cfg.KV_hidden_size) * cfg.Prefill_size  # 写入memory
         rope.memory_usage = (Weight_memory_usage
-                             + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2
-                             + cfg.Activation_width * cfg.Prefill_size * cfg.Embedding_size * 2)
+                             + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
+                             + cfg.Activation_width * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2)
         Stage_list.append(rope)
 
         QKV_Transpose1 = Stage("V_Transpose", platform="cloud")
-        QKV_Transpose1.read_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
+        QKV_Transpose1.read_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
         QKV_Transpose1.compute_amount = 0
-        QKV_Transpose1.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-        QKV_Transpose1.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + QKV_Transpose1.write_data_amount
+        QKV_Transpose1.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+        QKV_Transpose1.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + QKV_Transpose1.write_data_amount
         Stage_list.append(QKV_Transpose1)
 
         QK_MM = Stage("QK_MM", platform="cloud")
-        QK_MM.read_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Attention_feature_size * cfg.Activation_width * 2
-        QK_MM.compute_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Attention_feature_size * cfg.Prefill_size * 2
-        QK_MM.write_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width
-        QK_MM.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + QK_MM.write_data_amount
-        QK_MM.onchip_memory_usage = QK_MM.read_data_amount + QK_MM.write_data_amount + cfg.Attention_head * cfg.Prefill_size * cfg.Attention_feature_size * cfg.Activation_width   # 额外存了一份V
+        QK_MM.read_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.hidden_size_for_each_head * cfg.Activation_width
+        QK_MM.compute_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.hidden_size_for_each_head * cfg.Prefill_size * 2
+        QK_MM.write_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width
+        QK_MM.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + QK_MM.write_data_amount
+        QK_MM.onchip_memory_usage = QK_MM.read_data_amount + QK_MM.write_data_amount + cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.hidden_size_for_each_head * cfg.Activation_width   # 额外存了一份V
         Stage_list.append(QK_MM)
 
         Softmax = Stage("Softmax", platform="cloud")
-        Softmax.read_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width
-        Softmax.compute_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Prefill_size
-        Softmax.write_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width
+        Softmax.read_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width
+        Softmax.compute_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.Prefill_size
+        Softmax.write_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width
         #这个ex、加法是由device_dict["cloud"].vfu和device_dict["cloud"].vfu_device_dict["cloud"].sfu完成的，然后除法由单独由device_dict["cloud"].vfu完成，目前问题在于是否要反复读上来？？？
-        Softmax.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + Softmax.write_data_amount
+        Softmax.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + Softmax.write_data_amount
         Stage_list.append(Softmax)
 
         AttenV = Stage("AttenV", platform="cloud")
-        AttenV.read_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width + cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-        AttenV.compute_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Prefill_size * cfg.Attention_feature_size * 2
-        AttenV.write_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Attention_feature_size * cfg.Activation_width
-        AttenV.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + AttenV.write_data_amount
+        AttenV.read_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.Prefill_size * cfg.Activation_width + cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+        AttenV.compute_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.Prefill_size * cfg.hidden_size_for_each_head * 2
+        AttenV.write_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.hidden_size_for_each_head * cfg.Activation_width
+        AttenV.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + AttenV.write_data_amount
         AttenV.onchip_memory_usage = AttenV.read_data_amount + AttenV.write_data_amount
         Stage_list.append(AttenV)
 
         Atten_Transpose = Stage("Atten_Transpose", platform="cloud")
-        Atten_Transpose.read_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Attention_feature_size * cfg.Activation_width
+        Atten_Transpose.read_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.hidden_size_for_each_head * cfg.Activation_width
         Atten_Transpose.compute_amount = 0
-        Atten_Transpose.write_data_amount = cfg.Attention_head * cfg.Prefill_size * cfg.Attention_feature_size * cfg.Activation_width
-        Atten_Transpose.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + Atten_Transpose.write_data_amount
+        Atten_Transpose.write_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.Prefill_size * cfg.hidden_size_for_each_head * cfg.Activation_width
+        Atten_Transpose.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + Atten_Transpose.write_data_amount
         Stage_list.append(Atten_Transpose)
 
         Output_MM = Stage("Output_MM", platform="cloud")
-        Output_MM.read_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Embedding_size * cfg.Weight_width
-        Output_MM.compute_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Embedding_size * 2
-        Output_MM.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-        Output_MM.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + Output_MM.write_data_amount
+        Output_MM.read_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE * cfg.Weight_width
+        Output_MM.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE * 2
+        Output_MM.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+        Output_MM.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + Output_MM.write_data_amount
         Output_MM.onchip_memory_usage = Output_MM.read_data_amount + Output_MM.write_data_amount
         Stage_list.append(Output_MM)
 
         Atten_Element_Add = Stage("Atten_Element_Add", platform="cloud")
-        Atten_Element_Add.read_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width + cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-        Atten_Element_Add.compute_amount = cfg.Prefill_size * cfg.Embedding_size
-        Atten_Element_Add.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-        Atten_Element_Add.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2 + Atten_Element_Add.write_data_amount
+        Atten_Element_Add.read_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+        Atten_Element_Add.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE
+        Atten_Element_Add.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+        Atten_Element_Add.memory_usage = Weight_memory_usage + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2 + Atten_Element_Add.write_data_amount
         Stage_list.append(Atten_Element_Add)
         
         FFN_RMSLayerNorm0 = Stage("FFN_RMSLayerNorm0", platform="cloud")
-        FFN_RMSLayerNorm0.read_data_amount = (cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-                                              + cfg.Embedding_size * cfg.Weight_width)
-        FFN_RMSLayerNorm0.compute_amount = cfg.Prefill_size * cfg.Embedding_size * 2
-        FFN_RMSLayerNorm0.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
+        FFN_RMSLayerNorm0.read_data_amount = (cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+                                              + cfg.HIDDEN_SIZE * cfg.Weight_width)
+        FFN_RMSLayerNorm0.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
+        FFN_RMSLayerNorm0.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
         FFN_RMSLayerNorm0.memory_usage = (Weight_memory_usage
-                                          + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2
+                                          + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                           + FFN_RMSLayerNorm0.write_data_amount)
         Stage_list.append(FFN_RMSLayerNorm0)
 
         FFN_MM_up = Stage("FFN_MM_up", platform="cloud")
-        FFN_MM_up.read_data_amount = (cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-                                      + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * cfg.Weight_width)
-        FFN_MM_up.compute_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * 2
-        FFN_MM_up.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
+        FFN_MM_up.read_data_amount = (cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+                                      + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * cfg.Weight_width)
+        FFN_MM_up.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * 2
+        FFN_MM_up.write_data_amount = cfg.Prefill_size * cfg.INTERMEDIATE_SIZE * cfg.Activation_width
         FFN_MM_up.memory_usage = (Weight_memory_usage
-                                  + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2
+                                  + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                   + FFN_MM_up.write_data_amount)
         FFN_MM_up.onchip_memory_usage = FFN_MM_up.read_data_amount + FFN_MM_up.write_data_amount
         Stage_list.append(FFN_MM_up)
 
         FFN_MM_gate = Stage("FFN_MM_gate", platform="cloud")
-        FFN_MM_gate.read_data_amount = (cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-                                        + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * cfg.Weight_width)
-        FFN_MM_gate.compute_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * 2
-        FFN_MM_gate.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
+        FFN_MM_gate.read_data_amount = (cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+                                        + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * cfg.Weight_width)
+        FFN_MM_gate.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * 2
+        FFN_MM_gate.write_data_amount = cfg.Prefill_size * cfg.INTERMEDIATE_SIZE * cfg.Activation_width
         FFN_MM_gate.memory_usage = (Weight_memory_usage
-                                    + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2
+                                    + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                     + FFN_MM_gate.write_data_amount
                                     + FFN_MM_up.write_data_amount)
         FFN_MM_gate.onchip_memory_usage = FFN_MM_gate.read_data_amount + FFN_MM_gate.write_data_amount
         Stage_list.append(FFN_MM_gate)
 
         FFN_Element_Mul = Stage("FFN_Element_Mul", platform="cloud")
-        FFN_Element_Mul.read_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width * 2
-        FFN_Element_Mul.compute_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.FFN_times * 2
-        FFN_Element_Mul.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
+        FFN_Element_Mul.read_data_amount = cfg.Prefill_size * cfg.INTERMEDIATE_SIZE * cfg.Activation_width * 2
+        FFN_Element_Mul.compute_amount = cfg.Prefill_size * cfg.INTERMEDIATE_SIZE * 2
+        FFN_Element_Mul.write_data_amount = cfg.Prefill_size * cfg.INTERMEDIATE_SIZE * cfg.Activation_width
         FFN_Element_Mul.memory_usage = (Weight_memory_usage
-                                        + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2
+                                        + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                         + FFN_Element_Mul.write_data_amount)
         Stage_list.append(FFN_Element_Mul)
 
         FFN_MM_down = Stage("FFN_MM_down", platform="cloud")
-        FFN_MM_down.read_data_amount = (cfg.Prefill_size * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
-                                        + cfg.Embedding_size * cfg.FFN_times * cfg.Embedding_size * cfg.Weight_width)
-        FFN_MM_down.compute_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * 2
-        FFN_MM_down.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
+        FFN_MM_down.read_data_amount = (cfg.Prefill_size * cfg.INTERMEDIATE_SIZE * cfg.Activation_width
+                                        + cfg.INTERMEDIATE_SIZE * cfg.HIDDEN_SIZE * cfg.Weight_width)
+        FFN_MM_down.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * 2
+        FFN_MM_down.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
         FFN_MM_down.memory_usage = (Weight_memory_usage
-                                    + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2
+                                    + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                     + FFN_MM_down.write_data_amount)
         FFN_MM_down.onchip_memory_usage = FFN_MM_down.read_data_amount + FFN_MM_down.write_data_amount
         Stage_list.append(FFN_MM_down)
 
         FFN_Element_Add = Stage("FFN_Element_Add", platform="cloud")
-        FFN_Element_Add.read_data_amount = (cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
-                                            + cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width)
-        FFN_Element_Add.compute_amount = cfg.Prefill_size * cfg.Embedding_size
-        FFN_Element_Add.write_data_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Activation_width
+        FFN_Element_Add.read_data_amount = (cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
+                                            + cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width)
+        FFN_Element_Add.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE
+        FFN_Element_Add.write_data_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.Activation_width
         FFN_Element_Add.memory_usage = (Weight_memory_usage
-                                        + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.Embedding_size * 2
+                                        + cfg.Activation_width * (i + 1) * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                         + FFN_Element_Add.write_data_amount)
         Stage_list.append(FFN_Element_Add)
 
     Last_RMSLayerNorm = Stage("Last_RMSLayerNorm", platform="cloud")
-    Last_RMSLayerNorm.read_data_amount = cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Weight_width
-    Last_RMSLayerNorm.compute_amount = cfg.Embedding_size * 2
-    Last_RMSLayerNorm.write_data_amount = cfg.Embedding_size * cfg.Activation_width
+    Last_RMSLayerNorm.read_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.Weight_width
+    Last_RMSLayerNorm.compute_amount = cfg.HIDDEN_SIZE * 2
+    Last_RMSLayerNorm.write_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width
     Last_RMSLayerNorm.memory_usage = (Weight_memory_usage
-                                      + cfg.Activation_width * cfg.Layer_num * cfg.Prefill_size * cfg.Embedding_size * 2
+                                      + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                                       + Last_RMSLayerNorm.write_data_amount)
     Stage_list.append(Last_RMSLayerNorm)
     
     Last_MM = Stage("Last_MM", platform="cloud")
-    Last_MM.read_data_amount = cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Vocabulary_size * cfg.Weight_width
-    Last_MM.compute_amount = cfg.Embedding_size * cfg.Vocabulary_size * 2
-    Last_MM.write_data_amount = cfg.Vocabulary_size * cfg.Activation_width
+    Last_MM.read_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.VOCAB_SIZE * cfg.Weight_width
+    Last_MM.compute_amount = cfg.HIDDEN_SIZE * cfg.VOCAB_SIZE * 2
+    Last_MM.write_data_amount = cfg.VOCAB_SIZE * cfg.Activation_width
     Last_MM.memory_usage = (Weight_memory_usage
-                            + cfg.Activation_width * cfg.Layer_num * cfg.Prefill_size * cfg.Embedding_size * 2
+                            + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * cfg.Prefill_size * cfg.HIDDEN_SIZE * 2
                             + Last_MM.write_data_amount)
     Last_MM.onchip_memory_usage = Last_MM.read_data_amount + Last_MM.write_data_amount
     Stage_list.append(Last_MM)
@@ -248,190 +283,190 @@ def Decode(cfg):
     Stage_list = list()
 
     Weight_memory_usage = cfg.Weight_width * (
-        cfg.Layer_num * (
-            cfg.Embedding_size * cfg.Embedding_size * 3
-            + cfg.Embedding_size * 3
-            + cfg.Embedding_size * cfg.Embedding_size
-            + cfg.Embedding_size
-            + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times
-            + cfg.Embedding_size * cfg.FFN_times
-            + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times
-            + cfg.Embedding_size + cfg.Embedding_size * 2
-            + cfg.Embedding_size * 2
+        cfg.NUM_HIDDEN_LAYERS * (
+            cfg.HIDDEN_SIZE * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size)
+            + (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size)
+            + cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE
+            + cfg.HIDDEN_SIZE
+            + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE
+            + cfg.INTERMEDIATE_SIZE
+            + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE
+            + cfg.HIDDEN_SIZE + cfg.HIDDEN_SIZE * 2
+            + cfg.HIDDEN_SIZE * 2
             )
-        + cfg.Embedding_size * 2
-        + cfg.Embedding_size * cfg.Vocabulary_size
+        + cfg.HIDDEN_SIZE * 2
+        + cfg.HIDDEN_SIZE * cfg.VOCAB_SIZE
     )
-    KV_cache_init_usage = cfg.Activation_width * cfg.Layer_num * (cfg.Prefill_size * cfg.Embedding_size * 2)
+    KV_cache_init_usage = cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * (cfg.Prefill_size * cfg.HIDDEN_SIZE * 2)
     
     for i in range(cfg.Decode_size):
-        if cfg.Embedding_flag:
+        if cfg.EMBEDDING_FLAG:
             embedding1 = Stage("Embedding", platform="cloud")
-            embedding1.read_data_amount = (1 + 1 * cfg.Embedding_size) * cfg.Activation_width
-            embedding1.compute_amount = 1 * cfg.Embedding_size
-            embedding1.write_data_amount = 1 * cfg.Embedding_size * cfg.Activation_width
+            embedding1.read_data_amount = (1 + 1 * cfg.HIDDEN_SIZE) * cfg.Activation_width
+            embedding1.compute_amount = 1 * cfg.HIDDEN_SIZE
+            embedding1.write_data_amount = 1 * cfg.HIDDEN_SIZE * cfg.Activation_width
             embedding1.memory_usage = (Weight_memory_usage
                                        + KV_cache_init_usage
-                                       + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2
+                                       + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2
                                        + embedding1.write_data_amount)
             Stage_list.append(embedding1)
         
-        for j in range(cfg.Layer_num):
+        for j in range(cfg.NUM_HIDDEN_LAYERS):
             LayerRMSNorm1 = Stage("LayerRMSNorm1", platform="cloud")
-            LayerRMSNorm1.read_data_amount = (1 * cfg.Embedding_size * cfg.Activation_width
-                                              + cfg.Embedding_size * cfg.Weight_width)
-            LayerRMSNorm1.compute_amount = 1 * cfg.Embedding_size * 2
-            LayerRMSNorm1.write_data_amount = 1 * cfg.Embedding_size * cfg.Activation_width
+            LayerRMSNorm1.read_data_amount = (1 * cfg.HIDDEN_SIZE * cfg.Activation_width
+                                              + cfg.HIDDEN_SIZE * cfg.Weight_width)
+            LayerRMSNorm1.compute_amount = 1 * cfg.HIDDEN_SIZE * 2
+            LayerRMSNorm1.write_data_amount = 1 * cfg.HIDDEN_SIZE * cfg.Activation_width
             LayerRMSNorm1.memory_usage = (Weight_memory_usage
                                           + KV_cache_init_usage
-                                          + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2
-                                          + cfg.Activation_width * j * cfg.Embedding_size * 2
+                                          + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2
+                                          + cfg.Activation_width * j * cfg.HIDDEN_SIZE * 2
                                           + LayerRMSNorm1.write_data_amount)
             Stage_list.append(LayerRMSNorm1)
             
             QKV_MV = Stage("QKV_MV", platform="cloud")  # 这个地方写回就完成了KV concat
-            QKV_MV.read_data_amount = (1 * cfg.Embedding_size * cfg.Activation_width + (cfg.Embedding_size * cfg.Embedding_size ) * cfg.Weight_width) * 3
-            # QKV_MV.compute_amount = cfg.Prefill_size * cfg.Embedding_size * cfg.Embedding_size * 2 + cfg.Prefill_size * cfg.Embedding_size
-            QKV_MV.compute_amount = 1 * cfg.Embedding_size * cfg.Embedding_size * 2 * 3   #没考虑bias是device_dict["cloud"].mfu里自带可以加bias模块，方便计算
-            QKV_MV.write_data_amount = 1 * cfg.Embedding_size * cfg.Activation_width * 3
-            QKV_MV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + cfg.Embedding_size * cfg.Activation_width
-            QKV_MV.onchip_memory_usage = 1 * cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Embedding_size * cfg.Weight_width + QKV_MV.write_data_amount
+            QKV_MV.read_data_amount = (1 * cfg.HIDDEN_SIZE * cfg.Activation_width + (cfg.HIDDEN_SIZE * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size)) * cfg.Weight_width)
+            # QKV_MV.compute_amount = cfg.Prefill_size * cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE * 2 + cfg.Prefill_size * cfg.HIDDEN_SIZE
+            QKV_MV.compute_amount = 1 * cfg.HIDDEN_SIZE * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size) * 2   #没考虑bias是device_dict["cloud"].mfu里自带可以加bias模块，方便计算
+            QKV_MV.write_data_amount = 1 * (cfg.Q_hidden_size + cfg.KV_hidden_size + cfg.KV_hidden_size) * cfg.Activation_width
+            QKV_MV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + cfg.HIDDEN_SIZE * cfg.Activation_width
+            QKV_MV.onchip_memory_usage = 1 * cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE * cfg.Weight_width + QKV_MV.write_data_amount
             Stage_list.append(QKV_MV)
             
             rope = Stage("rope_embedding_QK", platform="cloud")
-            rope.read_data_amount = (2 * cfg.Attention_feature_size * 1 * cfg.Weight_width  # 编码读取
-                                     + 2 * cfg.Attention_head * cfg.Attention_feature_size * 1 * cfg.Activation_width)
-            rope.compute_amount = 2 * 2 * cfg.Attention_head * cfg.Attention_feature_size * 1
-            rope.write_data_amount = 2 * cfg.Attention_head * cfg.Attention_feature_size * 1  # 写入memory
+            rope.read_data_amount = (2 * cfg.hidden_size_for_each_head * 1 * cfg.Weight_width  # 编码读取
+                                     + (cfg.Q_hidden_size + cfg.KV_hidden_size) * 1 * cfg.Activation_width)
+            rope.compute_amount = 2 * (cfg.Q_hidden_size + cfg.KV_hidden_size) * 1
+            rope.write_data_amount = (cfg.Q_hidden_size + cfg.KV_hidden_size) * 1  # 写入memory
             rope.memory_usage = (Weight_memory_usage
                                  + KV_cache_init_usage
-                                 + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2
-                                 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2
-                                 + cfg.Embedding_size * cfg.Activation_width)
+                                 + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2
+                                 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2
+                                 + cfg.HIDDEN_SIZE * cfg.Activation_width)
             Stage_list.append(rope)
             
             QKV_Transpose1 = Stage("V_Transpose", platform="cloud")
-            QKV_Transpose1.read_data_amount = (cfg.Prefill_size + i + 1) * cfg.Embedding_size * cfg.Activation_width
+            QKV_Transpose1.read_data_amount = (cfg.Prefill_size + i + 1) * cfg.HIDDEN_SIZE * cfg.Activation_width
             QKV_Transpose1.compute_amount = 0
-            QKV_Transpose1.write_data_amount = (cfg.Prefill_size + i + 1) * cfg.Embedding_size * cfg.Activation_width
-            QKV_Transpose1.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + cfg.Embedding_size * cfg.Activation_width
+            QKV_Transpose1.write_data_amount = (cfg.Prefill_size + i + 1) * cfg.HIDDEN_SIZE * cfg.Activation_width
+            QKV_Transpose1.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + cfg.HIDDEN_SIZE * cfg.Activation_width
             Stage_list.append(QKV_Transpose1)
 
             QK_MV = Stage("QK_MV", platform="cloud")
-            QK_MV.read_data_amount = cfg.Attention_head * (cfg.Prefill_size + i + 2) * cfg.Attention_feature_size * cfg.Activation_width
-            QK_MV.compute_amount = cfg.Attention_head * (cfg.Prefill_size + i + 1) * cfg.Attention_feature_size * 2
-            QK_MV.write_data_amount = cfg.Attention_head * (cfg.Prefill_size + i + 1) * cfg.Activation_width
-            QK_MV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + QK_MV.write_data_amount
-            QK_MV.onchip_memory_usage = QK_MV.read_data_amount + QK_MV.write_data_amount + 1 * cfg.Embedding_size * cfg.Activation_width
+            QK_MV.read_data_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 2) * cfg.hidden_size_for_each_head * cfg.Activation_width
+            QK_MV.compute_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 1) * cfg.hidden_size_for_each_head * 2
+            QK_MV.write_data_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 1) * cfg.Activation_width
+            QK_MV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + QK_MV.write_data_amount
+            QK_MV.onchip_memory_usage = QK_MV.read_data_amount + QK_MV.write_data_amount + 1 * cfg.HIDDEN_SIZE * cfg.Activation_width
             Stage_list.append(QK_MV)
 
             Softmax = Stage("Softmax", platform="cloud")
-            Softmax.read_data_amount = cfg.Attention_head * (cfg.Prefill_size + i + 1) * cfg.Activation_width
-            Softmax.compute_amount = cfg.Attention_head * (cfg.Prefill_size + i + 1)
-            Softmax.write_data_amount = cfg.Attention_head * (cfg.Prefill_size + i + 1) * cfg.Activation_width
-            Softmax.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + Softmax.write_data_amount
+            Softmax.read_data_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 1) * cfg.Activation_width
+            Softmax.compute_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 1)
+            Softmax.write_data_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 1) * cfg.Activation_width
+            Softmax.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + Softmax.write_data_amount
             Stage_list.append(Softmax)
 
             AttenV = Stage("AttenV", platform="cloud")
-            AttenV.read_data_amount = cfg.Attention_head * (cfg.Prefill_size + i + 1) * cfg.Activation_width + (cfg.Prefill_size + i + 1) * cfg.Embedding_size * cfg.Activation_width
-            AttenV.compute_amount = cfg.Attention_head * (cfg.Prefill_size + i + 1) * cfg.Attention_feature_size * 2
-            AttenV.write_data_amount = cfg.Attention_head * cfg.Attention_feature_size * cfg.Activation_width
-            AttenV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + AttenV.write_data_amount
+            AttenV.read_data_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 1) * cfg.Activation_width + (cfg.Prefill_size + i + 1) * cfg.HIDDEN_SIZE * cfg.Activation_width
+            AttenV.compute_amount = cfg.NUM_ATTENTION_HEADS * (cfg.Prefill_size + i + 1) * cfg.hidden_size_for_each_head * 2
+            AttenV.write_data_amount = cfg.NUM_ATTENTION_HEADS * cfg.hidden_size_for_each_head * cfg.Activation_width
+            AttenV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + AttenV.write_data_amount
             AttenV.onchip_memory_usage = AttenV.read_data_amount + AttenV.write_data_amount
             Stage_list.append(AttenV)
 
             Output_MV = Stage("Output_MV", platform="cloud")
-            Output_MV.read_data_amount = cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Embedding_size * cfg.Weight_width
-            Output_MV.compute_amount = cfg.Embedding_size * cfg.Embedding_size * 2
-            Output_MV.write_data_amount = cfg.Embedding_size * cfg.Activation_width
-            Output_MV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + Output_MV.write_data_amount
+            Output_MV.read_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE * cfg.Weight_width
+            Output_MV.compute_amount = cfg.HIDDEN_SIZE * cfg.HIDDEN_SIZE * 2
+            Output_MV.write_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width
+            Output_MV.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + Output_MV.write_data_amount
             Output_MV.onchip_memory_usage = Output_MV.read_data_amount + Output_MV.write_data_amount
             Stage_list.append(Output_MV)
 
             Atten_Element_Add = Stage("Atten_Element_Add", platform="cloud")
-            Atten_Element_Add.read_data_amount = cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Activation_width
-            Atten_Element_Add.compute_amount = cfg.Embedding_size
-            Atten_Element_Add.write_data_amount = cfg.Embedding_size * cfg.Activation_width
-            Atten_Element_Add.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + Atten_Element_Add.write_data_amount
+            Atten_Element_Add.read_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.Activation_width
+            Atten_Element_Add.compute_amount = cfg.HIDDEN_SIZE
+            Atten_Element_Add.write_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width
+            Atten_Element_Add.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + Atten_Element_Add.write_data_amount
             Stage_list.append(Atten_Element_Add)
             
             FFN_RMSLayerNorm0 = Stage("FFN_RMSLayerNorm0", platform="cloud")
-            FFN_RMSLayerNorm0.read_data_amount = (cfg.Embedding_size * cfg.Activation_width
-                                                  + cfg.Embedding_size * cfg.Weight_width)
-            FFN_RMSLayerNorm0.compute_amount = cfg.Embedding_size * 2
-            FFN_RMSLayerNorm0.write_data_amount = cfg.Embedding_size * cfg.Activation_width
-            FFN_RMSLayerNorm0.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + FFN_RMSLayerNorm0.write_data_amount
+            FFN_RMSLayerNorm0.read_data_amount = (cfg.HIDDEN_SIZE * cfg.Activation_width
+                                                  + cfg.HIDDEN_SIZE * cfg.Weight_width)
+            FFN_RMSLayerNorm0.compute_amount = cfg.HIDDEN_SIZE * 2
+            FFN_RMSLayerNorm0.write_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width
+            FFN_RMSLayerNorm0.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + FFN_RMSLayerNorm0.write_data_amount
             Stage_list.append(FFN_RMSLayerNorm0)
 
             FFN_MV_up = Stage("FFN_MV_up", platform="cloud")
-            FFN_MV_up.read_data_amount = (cfg.Embedding_size * cfg.Activation_width
-                                          + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * cfg.Weight_width)
-            FFN_MV_up.compute_amount = cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * 2
-            FFN_MV_up.write_data_amount = cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
+            FFN_MV_up.read_data_amount = (cfg.HIDDEN_SIZE * cfg.Activation_width
+                                          + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * cfg.Weight_width)
+            FFN_MV_up.compute_amount = cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * 2
+            FFN_MV_up.write_data_amount = cfg.INTERMEDIATE_SIZE * cfg.Activation_width
             FFN_MV_up.onchip_memory_usage = FFN_MV_up.read_data_amount + FFN_MV_up.write_data_amount
             FFN_MV_up.memory_usage = (Weight_memory_usage
                                       + KV_cache_init_usage
-                                      + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2
-                                      + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2
+                                      + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2
+                                      + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2
                                       + FFN_MV_up.write_data_amount)
             Stage_list.append(FFN_MV_up)
 
             FFN_MV_gate = Stage("FFN_MV_gate", platform="cloud")  # 包含了Silu
-            FFN_MV_gate.read_data_amount = (cfg.Embedding_size * cfg.Activation_width
-                                            + cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * cfg.Weight_width)
-            FFN_MV_gate.compute_amount = 1 * cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * 2
-            FFN_MV_gate.write_data_amount = 1 * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
+            FFN_MV_gate.read_data_amount = (cfg.HIDDEN_SIZE * cfg.Activation_width
+                                            + cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * cfg.Weight_width)
+            FFN_MV_gate.compute_amount = 1 * cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * 2
+            FFN_MV_gate.write_data_amount = 1 * cfg.INTERMEDIATE_SIZE * cfg.Activation_width
             FFN_MV_gate.onchip_memory_usage = FFN_MV_gate.read_data_amount + FFN_MV_gate.write_data_amount
             FFN_MV_gate.memory_usage = (Weight_memory_usage
                                         + KV_cache_init_usage
-                                        + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2
-                                        + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2
+                                        + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2
+                                        + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2
                                         + FFN_MV_up.write_data_amount
                                         + FFN_MV_gate.write_data_amount)
             Stage_list.append(FFN_MV_gate)
 
             FFN_Element_Mul = Stage("FFN_Element_Mul", platform="cloud")
-            FFN_Element_Mul.read_data_amount = 1 * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width * 2
-            FFN_Element_Mul.compute_amount = 1 * cfg.Embedding_size * cfg.FFN_times * 2
-            FFN_Element_Mul.write_data_amount = 1 * cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
+            FFN_Element_Mul.read_data_amount = 1 * cfg.INTERMEDIATE_SIZE * cfg.Activation_width * 2
+            FFN_Element_Mul.compute_amount = 1 * cfg.INTERMEDIATE_SIZE * 2
+            FFN_Element_Mul.write_data_amount = 1 * cfg.INTERMEDIATE_SIZE * cfg.Activation_width
             FFN_Element_Mul.memory_usage = (Weight_memory_usage
                                             + KV_cache_init_usage
-                                            + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2
-                                            + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2
+                                            + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2
+                                            + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2
                                             + FFN_Element_Mul.write_data_amount
                                             )
             Stage_list.append(FFN_Element_Mul)
 
             FFN_MV_down = Stage("FFN_MV_down", platform="cloud")
-            FFN_MV_down.read_data_amount = (cfg.Embedding_size * cfg.FFN_times * cfg.Activation_width
-                                            + cfg.Embedding_size * cfg.FFN_times * cfg.Embedding_size * cfg.Weight_width)
-            FFN_MV_down.compute_amount = cfg.Embedding_size * cfg.Embedding_size * cfg.FFN_times * 2
-            FFN_MV_down.write_data_amount = cfg.Embedding_size * cfg.Activation_width
-            FFN_MV_down.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + FFN_MV_down.write_data_amount
+            FFN_MV_down.read_data_amount = (cfg.INTERMEDIATE_SIZE * cfg.Activation_width
+                                            + cfg.INTERMEDIATE_SIZE * cfg.HIDDEN_SIZE * cfg.Weight_width)
+            FFN_MV_down.compute_amount = cfg.HIDDEN_SIZE * cfg.INTERMEDIATE_SIZE * 2
+            FFN_MV_down.write_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width
+            FFN_MV_down.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + FFN_MV_down.write_data_amount
             FFN_MV_down.onchip_memory_usage = FFN_MV_down.read_data_amount + FFN_MV_down.write_data_amount
             Stage_list.append(FFN_MV_down)
 
             FFN_Element_Add = Stage("FFN_Element_Add", platform="cloud")
-            FFN_Element_Add.read_data_amount = cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Activation_width
-            FFN_Element_Add.compute_amount = cfg.Embedding_size
-            FFN_Element_Add.write_data_amount = cfg.Embedding_size * cfg.Activation_width
-            FFN_Element_Add.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * i * cfg.Embedding_size * 2 + cfg.Activation_width * (j + 1) * cfg.Embedding_size * 2 + FFN_Element_Add.write_data_amount
+            FFN_Element_Add.read_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.Activation_width
+            FFN_Element_Add.compute_amount = cfg.HIDDEN_SIZE
+            FFN_Element_Add.write_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width
+            FFN_Element_Add.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * i * cfg.HIDDEN_SIZE * 2 + cfg.Activation_width * (j + 1) * cfg.HIDDEN_SIZE * 2 + FFN_Element_Add.write_data_amount
             Stage_list.append(FFN_Element_Add)
 
         Last_RMSLayerNorm = Stage("Last_RMSLayerNorm", platform="cloud")
-        Last_RMSLayerNorm.read_data_amount = (cfg.Embedding_size * cfg.Activation_width
-                                              + cfg.Embedding_size * cfg.Weight_width)
-        Last_RMSLayerNorm.compute_amount = cfg.Embedding_size * 2
-        Last_RMSLayerNorm.write_data_amount = cfg.Embedding_size * cfg.Activation_width
-        Last_RMSLayerNorm.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * (
-                i + 1) * cfg.Embedding_size * 2 + Last_RMSLayerNorm.write_data_amount
+        Last_RMSLayerNorm.read_data_amount = (cfg.HIDDEN_SIZE * cfg.Activation_width
+                                              + cfg.HIDDEN_SIZE * cfg.Weight_width)
+        Last_RMSLayerNorm.compute_amount = cfg.HIDDEN_SIZE * 2
+        Last_RMSLayerNorm.write_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width
+        Last_RMSLayerNorm.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * (
+                i + 1) * cfg.HIDDEN_SIZE * 2 + Last_RMSLayerNorm.write_data_amount
         Stage_list.append(Last_RMSLayerNorm)
 
         Last_MM = Stage("Last_MM", platform="cloud")
-        Last_MM.read_data_amount = cfg.Embedding_size * cfg.Activation_width + cfg.Embedding_size * cfg.Vocabulary_size * cfg.Weight_width
-        Last_MM.compute_amount = cfg.Embedding_size * cfg.Vocabulary_size * 2
-        Last_MM.write_data_amount = cfg.Vocabulary_size * cfg.Activation_width
-        Last_MM.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.Layer_num * (i + 1) * cfg.Embedding_size * 2 + Last_MM.write_data_amount
+        Last_MM.read_data_amount = cfg.HIDDEN_SIZE * cfg.Activation_width + cfg.HIDDEN_SIZE * cfg.VOCAB_SIZE * cfg.Weight_width
+        Last_MM.compute_amount = cfg.HIDDEN_SIZE * cfg.VOCAB_SIZE * 2
+        Last_MM.write_data_amount = cfg.VOCAB_SIZE * cfg.Activation_width
+        Last_MM.memory_usage = Weight_memory_usage + KV_cache_init_usage + cfg.Activation_width * cfg.NUM_HIDDEN_LAYERS * (i + 1) * cfg.HIDDEN_SIZE * 2 + Last_MM.write_data_amount
         Last_MM.onchip_memory_usage = Last_MM.read_data_amount + Last_MM.write_data_amount
         Stage_list.append(Last_MM)
     return Stage_list
@@ -509,9 +544,9 @@ def profile_model(Model_name, Hardware_name, Prefill_size, Decode_size):
 
 if __name__ == "__main__":
     profile_model(
-        Model_name = "LLaMA2-7B",
-        Hardware_name = "GPU",
-        Prefill_size = 1536,
-        Decode_size = 512,
+        Model_name = "LLaMA3-70B",
+        Hardware_name = "FPGA",
+        Prefill_size = 1024,
+        Decode_size = 1,
     )
 
