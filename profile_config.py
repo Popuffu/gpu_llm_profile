@@ -25,7 +25,7 @@ if MODEL_NICKNAME == "llama3_8b":
     if DATA_TYPE == "FP16":
         TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-fp16-engine"
     elif DATA_TYPE == "W4A16KV8":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-engine"
+        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
     else:
         raise ValueError
     HF_MODEL_DIR = f"/mnt/public/{MODEL_NAME}"
@@ -35,7 +35,7 @@ elif MODEL_NICKNAME == "llama3_70b":
     if DATA_TYPE == "FP16":
         TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-fp16-engine"
     elif DATA_TYPE == "W4A16KV8":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-engine"
+        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
     else:
         raise ValueError
     HF_MODEL_DIR = f"/mnt/public/{MODEL_NAME}"
