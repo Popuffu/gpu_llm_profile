@@ -6,35 +6,41 @@ DATA_TYPE = "FP16"
 GPU_NAME = "RTX4090"
 
 WARMUP = 1
-TESTFREQ = 4
+TESTFREQ = 1
 
-PROFILE_CFG = [(1, 1, 128),]
+PROFILE_CFG = [(1, 1, 512),]
 
 assert BACKEND in ("hf", "vllm", "trtllm")
-assert DATA_TYPE in ("FP16", "W4A16KV8")
+assert DATA_TYPE in ("FP16", "W4A16KV8G128", "W8A8")
 
 # example: [(batch, input_length, output_length), ...]
-for batch in [1, 2, 4, 8, 16, 32, 64, 128, 256]: # 
-    for input_length in [1]:
-        for output_length in [1024]:
+for output_length in [1024+2048]:
+    batch_list = [1]
+    for i in range(2, 129, 2):
+        batch_list.append(i)
+            
+    for batch in batch_list: # 
+        for input_length in [1]:
             PROFILE_CFG.append((batch, input_length, output_length))
+
 
 if MODEL_NICKNAME == "llama3_8b":
     MODEL_NAME = "Meta-Llama-3-8B-Instruct"
     assert len(GPU_ID_LIST) in [1, 2, 4, 8]
     if DATA_TYPE == "FP16":
         TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-fp16-engine"
-    elif DATA_TYPE == "W4A16KV8":
+    elif DATA_TYPE == "W4A16KV8G128":
         TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
     else:
         raise ValueError
     HF_MODEL_DIR = f"/mnt/public/{MODEL_NAME}"
 elif MODEL_NICKNAME == "llama3_70b":
     MODEL_NAME = "Meta-Llama-3-70B-Instruct-hf"
-    assert len(GPU_ID_LIST) == 8
     if DATA_TYPE == "FP16":
         TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-fp16-engine"
-    elif DATA_TYPE == "W4A16KV8":
+    elif DATA_TYPE == "W4A16KV8G128":
+        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
+    elif DATA_TYPE == "W8A8":
         TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
     else:
         raise ValueError

@@ -699,11 +699,21 @@ class LlamaForCausalLM():
 
         # print(self.config._profile_state)
         total_compute_amount = sum(self.config._profile_state["compute_amount"])
+        total_matrix_compute = 0
+        total_vector_compute = 0
+        for i, this_layer_type in enumerate(self.config._profile_state["layer_type"]):
+            if this_layer_type in ("Linear", "Matmul"):
+                total_matrix_compute += self.config._profile_state["compute_amount"][i]
+            else:
+                total_vector_compute += self.config._profile_state["compute_amount"][i]
+
         total_read_weight_bytes = sum(self.config._profile_state["read_weight_bytes"])
         total_read_activation_bytes = sum(self.config._profile_state["read_activation_bytes"])
         total_write_activation_bytes = sum(self.config._profile_state["write_activation_bytes"])
         total_profile_info = {
             "total_compute_amount": total_compute_amount,
+            "total_matrix_compute_amount": total_matrix_compute,
+            "total_vector_compute_amount": total_vector_compute,
             "total_read_weight_bytes": total_read_weight_bytes,
             "total_read_activation_bytes": total_read_activation_bytes,
             "total_write_activation_bytes": total_write_activation_bytes,
@@ -741,12 +751,22 @@ def profile_model_end_to_end(model: LlamaForCausalLM, batch, prefill_size, decod
         decode_per_token_profile_info[key] = decode_profile_info[key] / decode_size
         end_to_end_profile_info[key] = prefill_profile_info[key] + decode_profile_info[key]
 
+    prefill_profile_info["batch"] = batch
+    prefill_profile_info["prefill_size"] = prefill_size
+    decode_profile_info["batch"] = batch
+    decode_profile_info["decode_size"] = decode_size
+    end_to_end_profile_info["batch"] = batch
+    end_to_end_profile_info["prefill_size"] = prefill_size
+    end_to_end_profile_info["decode_size"] = decode_size
+
     print("==========================================================")
     print("  Model_name:                           %s"        % (model.config.model_name))
     print("  Weight, Act, KV_cache:        [%6s, %6s, %6s]"   % (model.config.W_dtype, model.config.A_dtype, model.config.KV_dtype))
     print("  Batch, Prefill, Decode:       [%6d, %6d, %6d]"   % (batch, prefill_size, decode_size))
     print("----------------------------------------------------------")
     print("  Prefill_computation:             %13.6f GOPs"    % (prefill_profile_info["total_compute_amount"] / 1e9))
+    print("  Prefill_matrix_computation:      %13.6f GOPs"    % (prefill_profile_info["total_matrix_compute_amount"] / 1e9))
+    print("  Prefill_vector_computation:      %13.6f GOPs"    % (prefill_profile_info["total_vector_compute_amount"] / 1e9))
     print("  Prefill_memory_access:           %13.6f GB"      % (prefill_profile_info["total_memory_access"] / 1024 / 1024 / 1024))
     print("  --Prefill_read_weight:           %13.6f GB"      % (prefill_profile_info["total_read_weight_bytes"] / 1024 / 1024 / 1024))
     print("  --Prefill_read_act:              %13.6f GB"      % (prefill_profile_info["total_read_activation_bytes"] / 1024 / 1024 / 1024))
@@ -754,6 +774,8 @@ def profile_model_end_to_end(model: LlamaForCausalLM, batch, prefill_size, decod
     print("  Prefill_intensity:               %13.6f OP/Byte" % (prefill_profile_info["total_compute_amount"] / prefill_profile_info["total_memory_access"]))
     print("----------------------------------------------------------")
     print("  Decode_computation:              %13.6f GOPs"    % (decode_profile_info["total_compute_amount"] / 1e9))
+    print("  Decode_matrix_computation:       %13.6f GOPs"    % (decode_profile_info["total_matrix_compute_amount"] / 1e9))
+    print("  Decode_vector_computation:       %13.6f GOPs"    % (decode_profile_info["total_vector_compute_amount"] / 1e9))
     print("  Decode_memory_access:            %13.6f GB"      % (decode_profile_info["total_memory_access"] / 1024 / 1024 / 1024))
     print("  --Decode_read_weight:            %13.6f GB"      % (decode_profile_info["total_read_weight_bytes"] / 1024 / 1024 / 1024))
     print("  --Decode_read_act:               %13.6f GB"      % (decode_profile_info["total_read_activation_bytes"] / 1024 / 1024 / 1024))
@@ -774,6 +796,8 @@ def profile_model_end_to_end(model: LlamaForCausalLM, batch, prefill_size, decod
     print("  --End_to_end_write_act:          %13.6f GB"      % (end_to_end_profile_info["total_write_activation_bytes"] / 1024 / 1024 / 1024))
     print("  End_to_end_intensity:            %13.6f OP/Byte" % (end_to_end_profile_info["total_compute_amount"] / end_to_end_profile_info["total_memory_access"]))
     print("==========================================================")
+    
+    return prefill_profile_info, decode_profile_info, end_to_end_profile_info
 
 
 def profile_model_single_step(model: LlamaForCausalLM, batch, input_tokens, kv_cache_len):
@@ -796,23 +820,55 @@ def profile_model_single_step(model: LlamaForCausalLM, batch, input_tokens, kv_c
     print("==========================================================")
 
 
+def profile_DFX_perf(card_num, prefill_profile_info, decode_profile_info):
+    # 数据取自FPGA24 FlightLLM投稿时的仿真器，punish_ratio是为了profile出来的数据能和DFX文章match上
+    # DFX matrix算力2457.6 GOPS(200M)
+    DFX_card_num = card_num # 假设卡数和性能线性scale up
+    DFX_freq_MHz = 200
+    DFX_bandwidth_GB_per_s = 460
+    DFX_punish_ratio = 3
+    DFX_matrix_GFLOPS = (16 * 64 * 2 * 6) * DFX_freq_MHz / 1000 # GFLOPS
+    DFX_vector_GFLOPS = (64 * 6) * DFX_freq_MHz / 1000 # GFLOPS
+
+    DFX_prefill_compute_time = prefill_profile_info["total_matrix_compute_amount"] / 1e9 / DFX_matrix_GFLOPS + prefill_profile_info["total_vector_compute_amount"] / 1e9 / DFX_vector_GFLOPS
+    DFX_prefill_memory_time = prefill_profile_info["total_memory_access"] / 1024 / 1024 / 1024 / DFX_bandwidth_GB_per_s
+    DFX_prefill_time = max(DFX_prefill_compute_time, DFX_prefill_memory_time) * DFX_punish_ratio
+
+    DFX_decode_compute_time = decode_profile_info["total_matrix_compute_amount"] / 1e9 / DFX_matrix_GFLOPS + decode_profile_info["total_vector_compute_amount"] / 1e9 / DFX_vector_GFLOPS
+    DFX_decode_memory_time = decode_profile_info["total_memory_access"] / 1024 / 1024 / 1024 / DFX_bandwidth_GB_per_s
+    DFX_decode_time = max(DFX_decode_compute_time, DFX_decode_memory_time) * DFX_punish_ratio
+
+    print(f"batch,{prefill_profile_info['prefill_size']},prefill_size,{prefill_profile_info['prefill_size']},decode_size,{decode_profile_info['decode_size']},DFX_card_num,{DFX_card_num},DFX_prefill_time(s),{DFX_prefill_time},DFX_decode_time(s),{DFX_decode_time}")
+
+
 if __name__ == "__main__":
     model = LlamaForCausalLM(
-        model_name      = "Llama-3-70B",
-        W_dtype         = "INT4",
-        A_dtype         = "INT10",
-        KV_dtype        = "INT4",
+        model_name      = "Llama-3.1-70B",
+        W_dtype         = "FP16",
+        A_dtype         = "FP16",
+        KV_dtype        = "FP16",
         MISC_dtype      = "FP16",
     )
-    # profile_model_single_step(
+    # profile_model_single_step( ## for a single prefill or single decode
     #     model           = model,
     #     batch           = 2,
     #     input_tokens    = 1,
     #     kv_cache_len    = 10,
     # )
-    profile_model_end_to_end(
-        model           = model,
-        batch           = 1,
-        prefill_size    = 1536,
-        decode_size     = 512,
-    )
+    
+    PROFILE_DFX_FLAG = True
+    DFX_CARD_NUM = 4
+
+    for out in [1024, 2048, 4096]:
+        batch_list = [1]
+        for i in range(2, 129, 2):
+            batch_list.append(i)
+        for batch in batch_list:#[1, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128]: # 
+            prefill_profile_info, decode_profile_info, end_to_end_profile_info = profile_model_end_to_end(
+                model           = model,
+                batch           = batch,
+                prefill_size    = 1024,
+                decode_size     = out,
+            )
+            if PROFILE_DFX_FLAG:
+                profile_DFX_perf(DFX_CARD_NUM, prefill_profile_info, decode_profile_info)

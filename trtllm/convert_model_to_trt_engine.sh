@@ -23,7 +23,7 @@ if [ "$DATA_TYPE" == "FP16" ]; then
         --tp_size $GPU_NUM \
         --workers $GPU_NUM
 
-elif [ "$DATA_TYPE" == "W4A16KV8G64" ]; then
+elif [ "$DATA_TYPE" == "W4A16KV8G128" ]; then
     cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w4a16kv8-g"$group_size"-ckpt"
     engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w4a16kv8-g"$group_size"-engine"
     python ../quantization/quantize.py \
@@ -35,6 +35,16 @@ elif [ "$DATA_TYPE" == "W4A16KV8G64" ]; then
         --kv_cache_dtype int8 \
         --calib_size 32 \
         --tp_size $GPU_NUM
+
+elif [ "$DATA_TYPE" == "W8A8" ]; then # 没跑通，报一个tensor在CPU和GPU不同位置的错
+    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w8a8-ckpt"
+    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w8a8-engine"
+    python3 convert_checkpoint.py --model_dir $hf_model_dir \
+                                --output_dir $cpkt_dir \
+                                --dtype float16 \
+                                --smoothquant 0.5 \
+                                --per_token \
+                                --per_channel
 
 else
     echo "Unknown data_type: $DATA_TYPE"
