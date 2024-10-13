@@ -6,7 +6,7 @@ import numpy as np
 def get_gpu_power(gpu_id_list):
     result = subprocess.run(["nvidia-smi", "--query-gpu=power.draw", "--format=csv,noheader,nounits"], stdout=subprocess.PIPE)
     power_for_all_gpu = result.stdout.decode("utf-8").strip().split("\n")
-    assert len(power_for_all_gpu) == 8 # total GPU number
+    # assert len(power_for_all_gpu) == 8 # total GPU number
     total_gpu_power = 0.
     for gpu_id in gpu_id_list:
         total_gpu_power += float(power_for_all_gpu[gpu_id])
