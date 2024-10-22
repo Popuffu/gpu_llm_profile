@@ -23,6 +23,39 @@ if [ "$DATA_TYPE" == "FP16" ]; then
         --tp_size $GPU_NUM \
         --workers $GPU_NUM
 
+if [ "$DATA_TYPE" == "FP16-TP4PP2" ]; then
+    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp4-pp2-fp16-ckpt"
+    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp4-pp2-fp16-engine"
+    python3 convert_checkpoint.py \
+        --model_dir $hf_model_dir \
+        --output_dir $cpkt_dir \
+        --dtype float16 \
+        --tp_size 4 \
+        --pp_size 2 \
+        --workers 1
+
+elif [ "$DATA_TYPE" == "FP16-TP2PP4" ]; then
+    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp2-pp4-fp16-ckpt"
+    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp2-pp4-fp16-engine"
+    python3 convert_checkpoint.py \
+        --model_dir $hf_model_dir \
+        --output_dir $cpkt_dir \
+        --dtype float16 \
+        --tp_size 2 \
+        --pp_size 4 \
+        --workers 1
+
+elif [ "$DATA_TYPE" == "FP16-TP1PP8" ]; then
+    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp1-pp8-fp16-ckpt"
+    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp1-pp8-fp16-engine"
+    python3 convert_checkpoint.py \
+        --model_dir $hf_model_dir \
+        --output_dir $cpkt_dir \
+        --dtype float16 \
+        --tp_size 1 \
+        --pp_size 8 \
+        --workers 1
+
 elif [ "$DATA_TYPE" == "W4A16KV8G128" ]; then
     cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w4a16kv8-g"$group_size"-ckpt"
     engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w4a16kv8-g"$group_size"-engine"
