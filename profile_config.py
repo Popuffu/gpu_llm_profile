@@ -1,22 +1,28 @@
 
-GPU_ID_LIST = [0, 1, 2, 3, 4, 5, 6, 7]
+GPU_ID_LIST = [0]#, 1, 2, 3, 4, 5, 6, 7]
 BACKEND = "trtllm"
-MODEL_NICKNAME = "llama3_70b"
-DATA_TYPE = "FP8-TP8PP1"
-GPU_NAME = "RTX4090"
+MODEL_NICKNAME = "llama3.1_70b"
+DATA_TYPE = "W4A16KV8G128"
+GPU_NAME = "A100"
+
+GPU_NUM = len(GPU_ID_LIST)
+TP_SIZE = GPU_NUM
+PP_SIZE = 1
 
 WARMUP = 1
 TESTFREQ = 1
 
-PROFILE_CFG = [(1, 1, 512),]
+PROFILE_CFG = [(1, 1, 1024),]
 
 assert BACKEND in ("hf", "vllm", "trtllm")
-assert DATA_TYPE in ("FP16", "FP16-TP4PP2", "FP16-TP2PP4", "FP16-TP1PP8", "FP8-TP8PP1", "W4A16KV8G128", "W8A8") # FP16默认TP8
+assert DATA_TYPE in ("FP16", "FP8", "W4A16KV8G128", "W8A8smooth") # FP16默认TP8
+
+PARALLEL_NAME = f"TP{TP_SIZE}PP{PP_SIZE}"
 
 # example: [(batch, input_length, output_length), ...]
-for output_length in [1024, 1024+1024, 1024+2048, 1024+4096]:
-    batch_list = [1]
-    for i in range(2, 129, 2):
+for output_length in [1024, 1024+4096]:#[1024, 1024+4096]:#[1024, 1024+4096]:
+    batch_list = []
+    for i in range(128, 2048, 64):#range(2, 129, 2):
         batch_list.append(i)
             
     for batch in batch_list: # 
@@ -26,40 +32,23 @@ for output_length in [1024, 1024+1024, 1024+2048, 1024+4096]:
 
 if MODEL_NICKNAME == "llama3_8b":
     MODEL_NAME = "Meta-Llama-3-8B-Instruct"
-    assert len(GPU_ID_LIST) in [1, 2, 4, 8]
-    if DATA_TYPE == "FP16":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-fp16-engine"
-    elif DATA_TYPE == "W4A16KV8G128":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
-    else:
-        raise ValueError
-    HF_MODEL_DIR = f"/mnt/public/{MODEL_NAME}"
-elif MODEL_NICKNAME == "llama3_70b":
-    MODEL_NAME = "Meta-Llama-3-70B-Instruct-hf"
-    if GPU_NAME == "RTX4090":
-        assert len(GPU_ID_LIST) == 8
-    if DATA_TYPE == "FP16":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-fp16-engine" # 默认全使用TP
-    elif DATA_TYPE == "FP16-TP4PP2":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-tp4-pp2-fp16-engine"
-    elif DATA_TYPE == "FP16-TP2PP4":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-tp2-pp4-fp16-engine"
-    elif DATA_TYPE == "FP16-TP1PP8":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-tp1-pp8-fp16-engine"
-    elif DATA_TYPE == "FP8-TP8PP1":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-tp8-pp1-fp8-engine_fmha"
-    elif DATA_TYPE == "W4A16KV8G128":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
-    elif DATA_TYPE == "W8A8":
-        TRT_ENGINE_DIR = f"/mnt/public/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}gpu-awq-w4a16kv8-g128-engine"
-    else:
-        raise ValueError
-    HF_MODEL_DIR = f"/mnt/public/{MODEL_NAME}"
+elif MODEL_NICKNAME == "llama3.1_70b":
+    MODEL_NAME = "Meta-Llama-3.1-70B-Instruct"
 else:
     raise ValueError
 
+PROFILE_RESULT_DIR = f"{MODEL_NICKNAME}_{GPU_NAME}_profile.csv"
+
+TRTLLM_EXAMPLE_CODE_DIR = "/mnt/public/yangxinhao/TensorRT-LLM/examples"
+PYTHON_CODE_DIR = "/mnt/public/yangxinhao/gpu_llm_profile"
+HF_MODEL_DIR = f"/mnt/datasets/public_models/{MODEL_NAME}"
+TRT_BASE_DIR = f"{PYTHON_CODE_DIR}/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}x{GPU_NAME}-{DATA_TYPE}-{PARALLEL_NAME}"
+
+TRT_CKPT_DIR = f"{TRT_BASE_DIR}-ckpt"
+TRT_ENGINE_DIR = f"{TRT_BASE_DIR}-engine"
 
 if __name__ == "__main__":
     # DO NOT CHANGE THIS PRINT!
     # for the bash script to directly call this file to get the BACKEND and GPU_NUM variable!
-    print(f"{BACKEND} {len(GPU_ID_LIST)} {DATA_TYPE} {MODEL_NAME}")
+    print(f"{BACKEND} {GPU_NUM} {DATA_TYPE} {MODEL_NAME} {HF_MODEL_DIR} {TRT_CKPT_DIR} {TRT_ENGINE_DIR} {TP_SIZE} {PP_SIZE} {TRTLLM_EXAMPLE_CODE_DIR} {PYTHON_CODE_DIR}")
+    

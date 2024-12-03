@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from profile_config import GPU_ID_LIST, BACKEND, MODEL_NICKNAME, WARMUP, TESTFREQ, PROFILE_CFG, TRT_ENGINE_DIR, HF_MODEL_DIR, DATA_TYPE, GPU_NAME
+from profile_config import GPU_ID_LIST, GPU_NUM, PARALLEL_NAME, BACKEND, MODEL_NICKNAME, WARMUP, TESTFREQ, PROFILE_CFG, TRT_ENGINE_DIR, HF_MODEL_DIR, DATA_TYPE, GPU_NAME, PROFILE_RESULT_DIR
 assert BACKEND == "trtllm"
 ## Import hyper params ##
 
@@ -29,9 +29,7 @@ GPU_PROFILE_STATE = {
 
 import argparse
 import ast
-import csv
 import os
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -360,7 +358,8 @@ def main(args, profile_cfg_list):
                     "model_nickname": MODEL_NICKNAME,
                     "backend": BACKEND,
                     "gpu_name": GPU_NAME,
-                    "gpu_num": len(GPU_ID_LIST),
+                    "gpu_num": GPU_NUM,
+                    "parallel": PARALLEL_NAME,
                     "data_type": DATA_TYPE,
                     "batch": BATCH,
                     "input_length": INPUT_LENGTH,
@@ -392,7 +391,7 @@ def main(args, profile_cfg_list):
                 result_str = result_str.rstrip(", ")
                 result_str += "\n"
 
-                with open(f"profile_result.csv", "a") as f:
+                with open(PROFILE_RESULT_DIR, "a") as f:
                     f.write(result_str)
             else:
                 pass

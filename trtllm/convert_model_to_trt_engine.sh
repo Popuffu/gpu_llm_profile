@@ -1,96 +1,70 @@
 #!/bin/bash
 
+# Exit immediately if any command exits with a non-zero status
+set -e
+
 # Get both params from the Python script
-read BACKEND GPU_NUM DATA_TYPE MODEL_NAME <<< $(python profile_config.py)
+read BACKEND GPU_NUM DATA_TYPE MODEL_NAME HF_MODEL_DIR TRT_CKPT_DIR TRT_ENGINE_DIR TP_SIZE PP_SIZE TRTLLM_EXAMPLE_CODE_DIR PYTHON_CODE_DIR <<< $(python profile_config.py)
+
+echo "-------------------------------------"
 echo "Backend: $BACKEND"
-echo "GPU_NUM: $GPU_NUM"
+echo "GPU_NUM: $GPU_NUM (TP: $TP_SIZE, PP: $PP_SIZE)"
 echo "DATA_TYPE: $DATA_TYPE"
 echo "MODEL_NAME: $MODEL_NAME"
+echo "HF_MODEL_DIR: $HF_MODEL_DIR"
+echo "TRT_CKPT_DIR: $TRT_CKPT_DIR"
+echo "TRT_ENGINE_DIR: $TRT_ENGINE_DIR"
+echo "TRTLLM_EXAMPLE_CODE_DIR: $TRTLLM_EXAMPLE_CODE_DIR"
+echo "PYTHON_CODE_DIR: $PYTHON_CODE_DIR"
+echo "-------------------------------------"
 
-hf_model_dir=/mnt/public/$MODEL_NAME
-group_size=128
-
-cd /mnt/public/TensorRT-LLM/examples/llama
+cd $TRTLLM_EXAMPLE_CODE_DIR/llama
 echo Start to generate ckpt
 
+workers=8
+
 if [ "$DATA_TYPE" == "FP16" ]; then
-    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-fp16-ckpt"
-    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-fp16-engine"
     python3 convert_checkpoint.py \
-        --model_dir $hf_model_dir \
-        --output_dir $cpkt_dir \
+        --model_dir $HF_MODEL_DIR \
+        --output_dir $TRT_CKPT_DIR \
         --dtype float16 \
-        --tp_size $GPU_NUM \
-        --workers $GPU_NUM
+        --tp_size $TP_SIZE \
+        --pp_size $PP_SIZE \
+        --workers $workers
 
-elif [ "$DATA_TYPE" == "FP16-TP4PP2" ]; then
-    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp4-pp2-fp16-ckpt"
-    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp4-pp2-fp16-engine"
-    python3 convert_checkpoint.py \
-        --model_dir $hf_model_dir \
-        --output_dir $cpkt_dir \
-        --dtype float16 \
-        --tp_size 4 \
-        --pp_size 2 \
-        --workers 1
-
-elif [ "$DATA_TYPE" == "FP16-TP2PP4" ]; then
-    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp2-pp4-fp16-ckpt"
-    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp2-pp4-fp16-engine"
-    python3 convert_checkpoint.py \
-        --model_dir $hf_model_dir \
-        --output_dir $cpkt_dir \
-        --dtype float16 \
-        --tp_size 2 \
-        --pp_size 4 \
-        --workers 1
-
-elif [ "$DATA_TYPE" == "FP16-TP1PP8" ]; then
-    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp1-pp8-fp16-ckpt"
-    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp1-pp8-fp16-engine"
-    python3 convert_checkpoint.py \
-        --model_dir $hf_model_dir \
-        --output_dir $cpkt_dir \
-        --dtype float16 \
-        --tp_size 1 \
-        --pp_size 8 \
-        --workers 1
-
-elif [ "$DATA_TYPE" == "FP8-TP8PP1" ]; then
-    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp8-pp1-fp8-ckpt_fmha"
-    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-tp8-pp1-fp8-engine_fmha"
+elif [ "$DATA_TYPE" == "FP8" ]; then
     python3 ../quantization/quantize.py \
-        --model_dir $hf_model_dir \
-        --output_dir $cpkt_dir \
+        --model_dir $HF_MODEL_DIR \
+        --output_dir $TRT_CKPT_DIR \
         --dtype float16 \
         --qformat fp8 \
         --kv_cache_dtype fp8 \
         --calib_size 512 \
-        --tp_size 8 \
-        --pp_size 1
+        --tp_size $TP_SIZE \
+        --pp_size $PP_SIZE
 
 elif [ "$DATA_TYPE" == "W4A16KV8G128" ]; then
-    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w4a16kv8-g"$group_size"-ckpt"
-    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w4a16kv8-g"$group_size"-engine"
     python ../quantization/quantize.py \
-        --model_dir $hf_model_dir \
-        --output_dir $cpkt_dir \
+        --model_dir $HF_MODEL_DIR \
+        --output_dir $TRT_CKPT_DIR \
         --dtype float16 \
         --qformat int4_awq \
-        --awq_block_size $group_size \
+        --awq_block_size 128 \
         --kv_cache_dtype int8 \
         --calib_size 32 \
-        --tp_size $GPU_NUM
+        --tp_size $TP_SIZE \
+        --pp_size $PP_SIZE
 
-elif [ "$DATA_TYPE" == "W8A8" ]; then # 没跑通，报一个tensor在CPU和GPU不同位置的错
-    cpkt_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w8a8-ckpt"
-    engine_dir=/mnt/public/trt_models/$MODEL_NAME-$GPU_NUM"gpu-awq-w8a8-engine"
-    python3 convert_checkpoint.py --model_dir $hf_model_dir \
-                                --output_dir $cpkt_dir \
-                                --dtype float16 \
-                                --smoothquant 0.5 \
-                                --per_token \
-                                --per_channel
+elif [ "$DATA_TYPE" == "W8A8smooth" ]; then # 没跑通，报一个tensor在CPU和GPU不同位置的错
+    python3 convert_checkpoint.py \
+        --model_dir $HF_MODEL_DIR \
+        --output_dir $TRT_CKPT_DIR \
+        --dtype float16 \
+        --smoothquant 0.5 \
+        --per_token \
+        --per_channel \
+        --tp_size $TP_SIZE \
+        --pp_size $PP_SIZE
 
 else
     echo "Unknown data_type: $DATA_TYPE"
@@ -99,21 +73,22 @@ fi
 
 echo Start to generate engine
 
-if [ "$DATA_TYPE" == "FP8-TP8PP1" ]; then
+if [ "$DATA_TYPE" == "FP8" ]; then
     trtllm-build \
-        --checkpoint_dir $cpkt_dir \
-        --output_dir $engine_dir \
+        --checkpoint_dir $TRT_CKPT_DIR \
+        --output_dir $TRT_ENGINE_DIR \
         --gemm_plugin auto \
-        --workers $GPU_NUM \
-        --use_fp8_context_fmha enable
+        --workers $workers
+        # --use_fp8_context_fmha enable
 
 else
     trtllm-build \
-        --checkpoint_dir $cpkt_dir \
-        --output_dir $engine_dir \
+        --checkpoint_dir $TRT_CKPT_DIR \
+        --output_dir $TRT_ENGINE_DIR \
         --gemm_plugin auto \
-        --workers $GPU_NUM
+        --workers $workers
 fi
 
 # Clear ckpt intermediate file
-rm -r $cpkt_dir
+echo Clear generated ckpt
+rm -r $TRT_CKPT_DIR

@@ -1,5 +1,5 @@
 
-from profile_config import GPU_ID_LIST, BACKEND, MODEL_NICKNAME, WARMUP, TESTFREQ, PROFILE_CFG, HF_MODEL_DIR
+from profile_config import GPU_ID_LIST, GPU_NUM, PARALLEL_NAME, BACKEND, MODEL_NICKNAME, WARMUP, TESTFREQ, PROFILE_CFG, TRT_ENGINE_DIR, HF_MODEL_DIR, DATA_TYPE, GPU_NAME, PROFILE_RESULT_DIR
 assert BACKEND in ("hf", "vllm")
 ## Import hyper params ##
 
@@ -121,28 +121,31 @@ if __name__ == "__main__":
     else:
         raise ValueError
 
-    for exp_id, (batch, input_length, output_length) in enumerate(PROFILE_CFG):
-        prefill_latency, decode_latency, total_latency, avg_gpu_power, stderr_gpu_power = profile(MODEL_NICKNAME, model, BACKEND, batch, input_length, output_length)
+    for exp_id, (BATCH, INPUT_LENGTH, OUTPUT_LENGTH) in enumerate(PROFILE_CFG):
+        prefill_latency, decode_latency, total_latency, avg_gpu_power, stderr_gpu_power = profile(MODEL_NICKNAME, model, BACKEND, BATCH, INPUT_LENGTH, OUTPUT_LENGTH)
 
-        decode_token_output_latency = decode_latency / output_length
-        decode_tokens_per_second = (1000 / decode_token_output_latency) * batch
+        decode_token_output_latency = decode_latency / OUTPUT_LENGTH
+        decode_tokens_per_second = (1000 / decode_token_output_latency) * BATCH
 
-        total_token_output_latency = total_latency / (output_length + 1)
-        total_tokens_per_second = (1000 / total_token_output_latency) * batch
+        total_token_output_latency = total_latency / (OUTPUT_LENGTH + 1)
+        total_tokens_per_second = (1000 / total_token_output_latency) * BATCH
 
         exp_result = {
             "experiment_timestamp": time.strftime('%Y.%m.%d-%H:%M:%S', time.localtime(time.time())),
             "model_nickname": MODEL_NICKNAME,
             "backend": BACKEND,
-            "gpu_num": len(GPU_ID_LIST),
-            "batch": batch,
-            "input_length": input_length,
-            "output_length": output_length,
+            "gpu_name": GPU_NAME,
+            "gpu_num": GPU_NUM,
+            "parallel": PARALLEL_NAME,
+            "data_type": DATA_TYPE,
+            "batch": BATCH,
+            "input_length": INPUT_LENGTH,
+            "output_length": OUTPUT_LENGTH,
             "prefill_latency(ms)": prefill_latency,
-            "decode_latency(ms)": decode_latency if output_length > 1 else "-", # output_length=1时，decode_latency无意义
+            "decode_latency(ms)": decode_latency if OUTPUT_LENGTH > 1 else "-", # output_length=1时，decode_latency无意义
             # "total_latency(ms)": total_latency,
             # "total_throughput(token/s)": total_tokens_per_second,
-            "decode_throughput(tokens/s)": decode_tokens_per_second if output_length > 1 else "-", # output_length=1时，decode_latency无意义
+            "decode_throughput(tokens/s)": decode_tokens_per_second if OUTPUT_LENGTH > 1 else "-", # output_length=1时，decode_latency无意义
             "gpu_power_avg(W)": avg_gpu_power,
             "gpu_power_std(W)": stderr_gpu_power,
         }
@@ -165,7 +168,7 @@ if __name__ == "__main__":
         result_str = result_str.rstrip(", ")
         result_str += "\n"
 
-        with open(f"profile_result.csv", "a") as f:
+        with open(PROFILE_RESULT_DIR, "a") as f:
             f.write(result_str)
 
     

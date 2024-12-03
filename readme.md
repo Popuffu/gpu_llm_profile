@@ -24,8 +24,8 @@ This project is designed to provide a profiling tool for large language model (L
 5. Get your profiling results in `profile_results.csv`
 
 ## Version of key libraries during development (for reference only)
-- tensorrt-llm:   0.13.0.dev2024090300
+- tensorrt-llm:   0.13.0.dev2024090300 / 0.14.0.dev2024092401
 - tensorrt:       10.3.0
 - torch:          2.4.0
-- transformers:   4.44.2
+- transformers:   4.44.2 / 4.45.1
 - mpi4py:         4.0.0

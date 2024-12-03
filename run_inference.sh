@@ -1,9 +1,29 @@
-engine_dir=/mnt/public/trt_models/Meta-Llama-3-70B-Instruct-hf-8gpu-tp8-pp1-fp8-engine
-hf_model_dir=/mnt/public/Meta-Llama-3-70B-Instruct-hf
+#!/bin/bash
 
-mpirun -n 8 --allow-run-as-root \
-    python ./run.py \
+# Exit immediately if any command exits with a non-zero status
+set -e
+
+# Get both params from the Python script
+read BACKEND GPU_NUM DATA_TYPE MODEL_NAME HF_MODEL_DIR TRT_CKPT_DIR TRT_ENGINE_DIR TP_SIZE PP_SIZE TRTLLM_EXAMPLE_CODE_DIR PYTHON_CODE_DIR <<< $(python profile_config.py)
+
+echo "-------------------------------------"
+echo "Backend: $BACKEND"
+echo "GPU_NUM: $GPU_NUM (TP: $TP_SIZE, PP: $PP_SIZE)"
+echo "DATA_TYPE: $DATA_TYPE"
+echo "MODEL_NAME: $MODEL_NAME"
+echo "HF_MODEL_DIR: $HF_MODEL_DIR"
+echo "TRT_CKPT_DIR: $TRT_CKPT_DIR"
+echo "TRT_ENGINE_DIR: $TRT_ENGINE_DIR"
+echo "TRTLLM_EXAMPLE_CODE_DIR: $TRTLLM_EXAMPLE_CODE_DIR"
+echo "PYTHON_CODE_DIR: $PYTHON_CODE_DIR"
+echo "-------------------------------------"
+
+cd $TRTLLM_EXAMPLE_CODE_DIR
+echo Start to inference
+
+mpirun -n $GPU_NUM --allow-run-as-root \
+    python run.py \
     --max_output_len 128 \
     --max_input_length 256 \
-    --engine_dir $engine_dir \
-    --tokenizer_dir $hf_model_dir
+    --engine_dir $TRT_ENGINE_DIR \
+    --tokenizer_dir $HF_MODEL_DIR
