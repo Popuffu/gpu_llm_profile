@@ -353,46 +353,23 @@ def main(args, profile_cfg_list):
                 total_token_output_latency = total_latency / (OUTPUT_LENGTH + 1)
                 total_tokens_per_second = (1000 / total_token_output_latency) * BATCH
 
-                exp_result = {
-                    "experiment_timestamp": time.strftime('%Y.%m.%d-%H:%M:%S', time.localtime(time.time())),
-                    "model_nickname": MODEL_NICKNAME,
-                    "backend": BACKEND,
-                    "gpu_name": GPU_NAME,
-                    "gpu_num": GPU_NUM,
-                    "parallel": PARALLEL_NAME,
-                    "data_type": DATA_TYPE,
-                    "batch": BATCH,
-                    "input_length": INPUT_LENGTH,
-                    "output_length": OUTPUT_LENGTH,
-                    "prefill_latency(ms)": prefill_latency,
-                    "decode_latency(ms)": decode_latency if OUTPUT_LENGTH > 1 else "-", # output_length=1时，decode_latency无意义
-                    # "total_latency(ms)": total_latency,
-                    # "total_throughput(token/s)": total_tokens_per_second,
-                    "decode_throughput(tokens/s)": decode_tokens_per_second if OUTPUT_LENGTH > 1 else "-", # output_length=1时，decode_latency无意义
-                    "gpu_power_avg(W)": avg_gpu_power,
-                    "gpu_power_std(W)": stderr_gpu_power,
-                }
-                print(str(exp_result).replace("{", "----------------------------------------------------\n").replace("}", "\n----------------------------------------------------").replace(", ", "\n"))
-
-                result_str = ""
-                if exp_id == 0:
-                    title_str = ""
-                    for title_key in exp_result.keys():
-                        title_str += title_key + ", "
-                    title_str = title_str.rstrip(", ")
-                    title_str += "\n"
-                    result_str += title_str
-
-                for key, value in exp_result.items():
-                    if isinstance(value, float):
-                        result_str += "{:.3f}".format(value).ljust(len(key)) + ", "
-                    else:
-                        result_str += str(value).ljust(len(key)) + ", "
-                result_str = result_str.rstrip(", ")
-                result_str += "\n"
-
-                with open(PROFILE_RESULT_DIR, "a") as f:
-                    f.write(result_str)
+                utils.write_profile_result(
+                    out_csv_dir = PROFILE_RESULT_DIR, 
+                    write_title_flag = exp_id == 0, 
+                    model_nickname = MODEL_NICKNAME, 
+                    backend = BACKEND, 
+                    gpu_name = GPU_NAME, 
+                    gpu_num = GPU_NUM, 
+                    parallel = PARALLEL_NAME, 
+                    data_type = DATA_TYPE, 
+                    batch = BATCH, 
+                    input_length = INPUT_LENGTH, 
+                    output_length = OUTPUT_LENGTH, 
+                    prefill_latency = prefill_latency,
+                    decode_latency = decode_latency, 
+                    decode_throughput = decode_tokens_per_second, 
+                    avg_gpu_power = avg_gpu_power,
+                )
             else:
                 pass
 

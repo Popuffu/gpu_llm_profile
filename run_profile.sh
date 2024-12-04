@@ -4,11 +4,11 @@
 set -e
 
 # Get both params from the Python script
-read BACKEND GPU_NUM DATA_TYPE MODEL_NAME HF_MODEL_DIR TRT_CKPT_DIR TRT_ENGINE_DIR TP_SIZE PP_SIZE TRTLLM_EXAMPLE_CODE_DIR PYTHON_CODE_DIR <<< $(python profile_config.py)
+read BACKEND GPU_NUM GPU_NAME DATA_TYPE MODEL_NAME HF_MODEL_DIR TRT_CKPT_DIR TRT_ENGINE_DIR TP_SIZE PP_SIZE TRTLLM_EXAMPLE_CODE_DIR PYTHON_CODE_DIR <<< $(python profile_config.py)
 
 echo "-------------------------------------"
 echo "Backend: $BACKEND"
-echo "GPU_NUM: $GPU_NUM (TP: $TP_SIZE, PP: $PP_SIZE)"
+echo "GPU: $GPU_NUM * $GPU_NAME (TP: $TP_SIZE, PP: $PP_SIZE)"
 echo "DATA_TYPE: $DATA_TYPE"
 echo "MODEL_NAME: $MODEL_NAME"
 echo "HF_MODEL_DIR: $HF_MODEL_DIR"
