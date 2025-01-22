@@ -1,15 +1,15 @@
 
-GPU_ID_LIST = [0]#, 1, 2, 3, 4, 5, 6, 7]
+GPU_ID_LIST = [0, 1, 2, 3, 4, 5, 6, 7]
 BACKEND = "trtllm"
 MODEL_NICKNAME = "llama3.1_70b"
-DATA_TYPE = "W4A16KV8G128"
+DATA_TYPE = "FP16"
 
 GPU_NUM = len(GPU_ID_LIST)
 TP_SIZE = GPU_NUM
 PP_SIZE = 1
 
 WARMUP = 1
-TESTFREQ = 1
+TESTFREQ = 4
 
 PROFILE_CFG = [(1, 1, 1024),]
 
@@ -18,15 +18,21 @@ assert DATA_TYPE in ("FP16", "FP8", "W4A16KV8G128", "W8A8smooth") # FP16默认TP
 
 PARALLEL_NAME = f"TP{TP_SIZE}PP{PP_SIZE}"
 
-# example: [(batch, input_length, output_length), ...]
-for output_length in [1024, 1024+128, 1024+256, 1024+512, 1024+1024, 1024+2048, 1024+4096]:
-    batch_list = [1]
-    for i in range(2, 129, 1):
-        batch_list.append(i)
-            
-    for batch in batch_list: # 
-        for input_length in [1]:
-            PROFILE_CFG.append((batch, input_length, output_length))
+# # example: [(batch, input_length, output_length), ...]
+# for output_length in [1024, 1024+256]:#[128, 256, 512, 1024]:
+#     batch_list = [256]
+#     for batch in batch_list:
+#         PROFILE_CFG.append((batch, 1, output_length))
+
+for output_length in [2, 1024, 1024+256]:#[128, 256, 512, 1024]:
+    batch_list = [256]
+    for batch in batch_list:
+        PROFILE_CFG.append((batch, 1, output_length))
+
+# for output_length in [128,256,384,512,640,768,1024,1152,1280,1536,2048,]:
+#     batch_list = [256]
+#     for batch in batch_list: # 
+#         PROFILE_CFG.append((batch, 1, output_length))
 
 
 # 获取当前指定ID的GPU型号
@@ -55,12 +61,12 @@ elif MODEL_NICKNAME == "llama3.1_70b":
 else:
     raise ValueError
 
-PROFILE_RESULT_DIR = f"{MODEL_NICKNAME}_{GPU_NAME}_profile.csv"
+PROFILE_RESULT_DIR = f"{MODEL_NICKNAME}_{GPU_NAME}_fccm_profile.csv"
 
 TRTLLM_EXAMPLE_CODE_DIR = "/mnt/public/yangxinhao/TensorRT-LLM/examples"
 PYTHON_CODE_DIR = "/mnt/public/yangxinhao/gpu_llm_profile"
-HF_MODEL_DIR = f"/mnt/datasets/public_models/{MODEL_NAME}"
-TRT_BASE_DIR = f"{PYTHON_CODE_DIR}/trt_models/{MODEL_NAME}-{len(GPU_ID_LIST)}x{GPU_NAME}-{DATA_TYPE}-{PARALLEL_NAME}"
+HF_MODEL_DIR = f"/mnt/resource/public_models/{MODEL_NAME}"
+TRT_BASE_DIR = f"/mnt/volume/yangxinhao/{MODEL_NAME}-{len(GPU_ID_LIST)}x{GPU_NAME}-{DATA_TYPE}-{PARALLEL_NAME}"
 
 TRT_CKPT_DIR = f"{TRT_BASE_DIR}-ckpt"
 TRT_ENGINE_DIR = f"{TRT_BASE_DIR}-engine"

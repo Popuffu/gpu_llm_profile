@@ -12,8 +12,12 @@ class LayerData:
     @staticmethod
     def get_bitwidth_from_dtype(data_format: str):
         # 根据数据格式字符串返回比特数，例如 "FP16" 或 "INT9"
-        bit_count = ''.join(filter(str.isdigit, data_format)) # 提取字符串中的数字部分
-        return int(bit_count) # 将数字部分转换为整数并返回
+        if data_format.startswith("INT"):
+            return float(data_format.lstrip("INT"))
+        elif data_format.startswith("FP"):
+            return float(data_format.lstrip("FP"))
+        else:
+            raise ValueError
         
     @staticmethod
     def squeeze_shape(shape):
@@ -42,6 +46,15 @@ class ModelConfig:
             self.NUM_HIDDEN_LAYERS = 32
             self.NUM_KEY_VALUE_HEADS = 8
             self.VOCAB_SIZE = 128256
+
+        elif self.model_name in ("Llama-2-13B"):
+            self.BIAS_FLAG = False
+            self.HIDDEN_SIZE = 5120
+            self.INTERMEDIATE_SIZE = 13824
+            self.NUM_ATTENTION_HEADS = 40
+            self.NUM_HIDDEN_LAYERS = 40
+            self.NUM_KEY_VALUE_HEADS = 40
+            self.VOCAB_SIZE = 32000
 
         elif self.model_name in ("Llama-3-70B", "Llama-3.1-70B"):
             self.BIAS_FLAG = False
@@ -830,15 +843,15 @@ def profile_DFX_perf(card_num, prefill_profile_info, decode_profile_info):
     DFX_matrix_GFLOPS = (16 * 64 * 2 * 6) * DFX_freq_MHz / 1000 # GFLOPS
     DFX_vector_GFLOPS = (64 * 6) * DFX_freq_MHz / 1000 # GFLOPS
 
-    DFX_prefill_compute_time = prefill_profile_info["total_matrix_compute_amount"] / 1e9 / DFX_matrix_GFLOPS + prefill_profile_info["total_vector_compute_amount"] / 1e9 / DFX_vector_GFLOPS
-    DFX_prefill_memory_time = prefill_profile_info["total_memory_access"] / 1024 / 1024 / 1024 / DFX_bandwidth_GB_per_s
-    DFX_prefill_time = max(DFX_prefill_compute_time, DFX_prefill_memory_time) * DFX_punish_ratio
+    # DFX_prefill_compute_time = prefill_profile_info["total_matrix_compute_amount"] / 1e9 / DFX_matrix_GFLOPS + prefill_profile_info["total_vector_compute_amount"] / 1e9 / DFX_vector_GFLOPS
+    # DFX_prefill_memory_time = prefill_profile_info["total_memory_access"] / 1024 / 1024 / 1024 / DFX_bandwidth_GB_per_s
+    # DFX_prefill_time = max(DFX_prefill_compute_time, DFX_prefill_memory_time) * DFX_punish_ratio / DFX_card_num
 
     DFX_decode_compute_time = decode_profile_info["total_matrix_compute_amount"] / 1e9 / DFX_matrix_GFLOPS + decode_profile_info["total_vector_compute_amount"] / 1e9 / DFX_vector_GFLOPS
     DFX_decode_memory_time = decode_profile_info["total_memory_access"] / 1024 / 1024 / 1024 / DFX_bandwidth_GB_per_s
-    DFX_decode_time = max(DFX_decode_compute_time, DFX_decode_memory_time) * DFX_punish_ratio
+    DFX_decode_time = max(DFX_decode_compute_time, DFX_decode_memory_time) * DFX_punish_ratio / DFX_card_num
 
-    print(f"batch,{prefill_profile_info['prefill_size']},prefill_size,{prefill_profile_info['prefill_size']},decode_size,{decode_profile_info['decode_size']},DFX_card_num,{DFX_card_num},DFX_prefill_time(s),{DFX_prefill_time},DFX_decode_time(s),{DFX_decode_time}")
+    print(f"batch,{prefill_profile_info['prefill_size']},prefill_size,{prefill_profile_info['prefill_size']},decode_size,{decode_profile_info['decode_size']},DFX_card_num,{DFX_card_num},DFX_decode_time(s),{DFX_decode_time},DFX_decode_throughput(token/s),{decode_profile_info['batch'] * decode_profile_info['decode_size']/ DFX_decode_time}")
 
 
 if __name__ == "__main__":
@@ -856,13 +869,13 @@ if __name__ == "__main__":
     #     kv_cache_len    = 10,
     # )
     
-    PROFILE_DFX_FLAG = True
-    DFX_CARD_NUM = 4
+    PROFILE_DFX_FLAG = False
+    DFX_CARD_NUM = 8
 
-    for out in [1024, 2048, 4096]:
-        batch_list = [1]
-        for i in range(2, 129, 2):
-            batch_list.append(i)
+    for out in [256]:
+        batch_list = [256]
+        # for i in range(2, 129, 2):
+        #     batch_list.append(i)
         for batch in batch_list:#[1, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128]: # 
             prefill_profile_info, decode_profile_info, end_to_end_profile_info = profile_model_end_to_end(
                 model           = model,
